@@ -496,8 +496,9 @@ func (p *Provider) Token(c *gin.Context) {
 			return
 		}
 	} else {
-		// Confidential clients authenticate via client_secret
-		if clientSecret != client.ClientSecret {
+		// Confidential clients authenticate via client_secret (constant-time)
+		if client.ClientSecret == "" || clientSecret == "" ||
+			subtle.ConstantTimeCompare([]byte(client.ClientSecret), []byte(clientSecret)) != 1 {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
 			return
 		}
@@ -621,9 +622,13 @@ func (p *Provider) resolveClient(ctx context.Context, tenant, clientID string) (
 	if err == nil {
 		return client, nil
 	}
+	if !errors.Is(err, storage.ErrNotFound) {
+		return nil, fmt.Errorf("looking up client: %w", err)
+	}
 	if sc, ok := p.cfg.OP.ResolveClientForTenant(tenant, clientID); ok {
 		return &domain.OIDCClient{
 			ClientID:                sc.ClientID,
+			ClientSecret:            sc.ClientSecret,
 			ClientName:              sc.ClientName,
 			RedirectURIs:            sc.RedirectURIs,
 			TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,

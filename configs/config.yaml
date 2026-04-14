@@ -49,7 +49,7 @@ op:
   #     client_name: "Foobar Inc."
   #     redirect_uris:
   #       - https://id.siros.org/id/foobar/oidc/cb
-  #     # Public client with PKCE
+  #     # Public client (no client authentication)
   #     token_endpoint_auth_method: "none"
   #
   #   # Templated: ${tenant} is substituted with the requesting tenant at runtime.

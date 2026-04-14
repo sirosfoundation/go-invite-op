@@ -166,6 +166,7 @@ func (r *RateLimitConfig) SetDefaults() {
 type StaticClientConfig struct {
 	ClientID                string   `yaml:"client_id"`
 	ClientName              string   `yaml:"client_name,omitempty"`
+	ClientSecret            string   `yaml:"client_secret,omitempty"`
 	RedirectURIs            []string `yaml:"redirect_uris"`
 	TokenEndpointAuthMethod string   `yaml:"token_endpoint_auth_method,omitempty"`
 }
@@ -192,6 +193,7 @@ func (s *StaticClientConfig) ExpandForTenant(tenant string) StaticClientConfig {
 	return StaticClientConfig{
 		ClientID:                strings.ReplaceAll(s.ClientID, "${tenant}", tenant),
 		ClientName:              strings.ReplaceAll(s.ClientName, "${tenant}", tenant),
+		ClientSecret:            s.ClientSecret,
 		RedirectURIs:            uris,
 		TokenEndpointAuthMethod: s.TokenEndpointAuthMethod,
 	}
@@ -364,6 +366,35 @@ func (c *Config) Validate() error {
 		}
 		if len(sc.RedirectURIs) == 0 {
 			return fmt.Errorf("op.static_clients[%d] (%s): redirect_uris must not be empty", i, sc.ClientID)
+		}
+		authMethod := sc.TokenEndpointAuthMethod
+		if authMethod == "" {
+			if sc.ClientSecret == "" {
+				authMethod = "none"
+			} else {
+				authMethod = "client_secret_post"
+			}
+		}
+		switch authMethod {
+		case "none", "client_secret_basic", "client_secret_post":
+			// ok
+		default:
+			return fmt.Errorf(
+				"op.static_clients[%d] (%s): invalid token_endpoint_auth_method %q",
+				i, sc.ClientID, sc.TokenEndpointAuthMethod,
+			)
+		}
+		if authMethod == "none" && sc.ClientSecret != "" {
+			return fmt.Errorf(
+				"op.static_clients[%d] (%s): client_secret must not be set when token_endpoint_auth_method is none",
+				i, sc.ClientID,
+			)
+		}
+		if authMethod != "none" && sc.ClientSecret == "" {
+			return fmt.Errorf(
+				"op.static_clients[%d] (%s): client_secret is required when token_endpoint_auth_method is %s",
+				i, sc.ClientID, authMethod,
+			)
 		}
 	}
 	return nil

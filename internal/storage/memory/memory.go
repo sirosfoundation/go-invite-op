@@ -177,12 +177,17 @@ func (s *ClientStore) Create(_ context.Context, client *domain.OIDCClient) error
 func (s *ClientStore) Upsert(_ context.Context, client *domain.OIDCClient) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	stored := *client
 	if existing, exists := s.data[client.ClientID]; exists {
-		client.CreatedAt = existing.CreatedAt
+		stored.CreatedAt = existing.CreatedAt
+		if strings.TrimSpace(stored.ClientSecret) == "" {
+			stored.ClientSecret = existing.ClientSecret
+		}
 	} else {
-		client.CreatedAt = time.Now()
+		stored.CreatedAt = time.Now()
 	}
-	s.data[client.ClientID] = client
+	client.CreatedAt = stored.CreatedAt
+	s.data[client.ClientID] = &stored
 	return nil
 }
 

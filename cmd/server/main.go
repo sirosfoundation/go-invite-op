@@ -98,14 +98,15 @@ func main() {
 			}
 			client := &domain.OIDCClient{
 				ClientID:                sc.ClientID,
+				ClientSecret:            sc.ClientSecret,
 				ClientName:              sc.ClientName,
 				RedirectURIs:            sc.RedirectURIs,
 				TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
 			}
-			if err := store.Clients().Upsert(seedCtx, client); err != nil {
+			if seedErr := store.Clients().Upsert(seedCtx, client); seedErr != nil {
 				logger.Fatal("Failed to seed static OIDC client",
 					zap.String("client_id", sc.ClientID),
-					zap.Error(err),
+					zap.Error(seedErr),
 				)
 			}
 			logger.Info("Seeded static OIDC client", zap.String("client_id", sc.ClientID))

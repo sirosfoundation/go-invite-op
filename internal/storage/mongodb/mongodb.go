@@ -351,13 +351,16 @@ func (s *ClientStore) Create(ctx context.Context, client *domain.OIDCClient) err
 func (s *ClientStore) Upsert(ctx context.Context, client *domain.OIDCClient) error {
 	now := time.Now()
 	filter := bson.M{"_id": client.ClientID}
+	set := bson.M{
+		"redirect_uris":              client.RedirectURIs,
+		"client_name":                client.ClientName,
+		"token_endpoint_auth_method": client.TokenEndpointAuthMethod,
+	}
+	if client.ClientSecret != "" {
+		set["client_secret"] = client.ClientSecret
+	}
 	update := bson.M{
-		"$set": bson.M{
-			"client_secret":              client.ClientSecret,
-			"redirect_uris":              client.RedirectURIs,
-			"client_name":                client.ClientName,
-			"token_endpoint_auth_method": client.TokenEndpointAuthMethod,
-		},
+		"$set": set,
 		"$setOnInsert": bson.M{
 			"created_at": now,
 		},
