@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -197,8 +198,8 @@ func main() {
 
 	go func() {
 		logger.Info("HTTP server listening", zap.String("address", httpAddr), zap.Bool("tls", cfg.Server.TLS.Enabled))
-		if err := cfg.Server.TLS.ListenAndServe(httpServer); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("HTTP server error", zap.Error(err))
+		if srvErr := cfg.Server.TLS.ListenAndServe(httpServer); srvErr != nil && !errors.Is(srvErr, http.ErrServerClosed) {
+			logger.Fatal("HTTP server error", zap.Error(srvErr))
 		}
 	}()
 
@@ -253,8 +254,8 @@ func main() {
 	adminTLS := config.EffectiveAdminTLS(&cfg.Server.TLS, cfg.Server.AdminTLS)
 	go func() {
 		logger.Info("Admin server listening", zap.String("address", adminAddr), zap.Bool("tls", adminTLS.Enabled))
-		if err := adminTLS.ListenAndServe(adminServer); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Admin server error", zap.Error(err))
+		if adminErr := adminTLS.ListenAndServe(adminServer); adminErr != nil && !errors.Is(adminErr, http.ErrServerClosed) {
+			logger.Fatal("Admin server error", zap.Error(adminErr))
 		}
 	}()
 

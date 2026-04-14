@@ -67,6 +67,25 @@ func TestDiscovery(t *testing.T) {
 	assert.Equal(t, "http://localhost:8080/test-tenant/authorize", body["authorization_endpoint"])
 	assert.Equal(t, "http://localhost:8080/test-tenant/token", body["token_endpoint"])
 	assert.Equal(t, "http://localhost:8080/test-tenant/register", body["registration_endpoint"])
+	assert.Equal(t, "http://localhost:8080/test-tenant/.well-known/jwks.json", body["jwks_uri"])
+}
+
+func TestJWKS(t *testing.T) {
+	_, router := setupProvider(t)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test-tenant/.well-known/jwks.json", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var body map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &body)
+	require.NoError(t, err)
+
+	keys, ok := body["keys"].([]interface{})
+	require.True(t, ok)
+	assert.Empty(t, keys) // HS256 — no public keys to expose
 }
 
 func TestRegisterClient(t *testing.T) {

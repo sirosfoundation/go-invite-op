@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -174,7 +175,7 @@ func (s *InviteStore) GetByID(ctx context.Context, tenantID domain.TenantID, id 
 	var invite domain.Invite
 	err := s.collection.FindOne(ctx, bson.M{"_id": id, "tenant_id": string(tenantID)}).Decode(&invite)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("getting invite: %w", err)
@@ -187,7 +188,7 @@ func (s *InviteStore) GetByEmail(ctx context.Context, tenantID domain.TenantID, 
 	filter := bson.M{"tenant_id": string(tenantID), "email": bson.M{"$regex": "^" + escapeRegex(email) + "$", "$options": "i"}}
 	err := s.collection.FindOne(ctx, filter).Decode(&invite)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("getting invite by email: %w", err)
@@ -199,7 +200,7 @@ func (s *InviteStore) GetByCode(ctx context.Context, tenantID domain.TenantID, c
 	var invite domain.Invite
 	err := s.collection.FindOne(ctx, bson.M{"tenant_id": string(tenantID), "code": code}).Decode(&invite)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("getting invite by code: %w", err)
@@ -297,7 +298,7 @@ func (s *InviteStore) FindBestMatch(ctx context.Context, tenantID domain.TenantI
 	if err == nil {
 		return &invite, nil
 	}
-	if err != mongo.ErrNoDocuments {
+	if !errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, fmt.Errorf("finding invite by email: %w", err)
 	}
 
@@ -322,7 +323,7 @@ func (s *InviteStore) FindBestMatch(ctx context.Context, tenantID domain.TenantI
 
 	err = s.collection.FindOne(ctx, domainFilter).Decode(&invite)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("finding invite by domain: %w", err)
@@ -351,7 +352,7 @@ func (s *ClientStore) GetByID(ctx context.Context, clientID string) (*domain.OID
 	var client domain.OIDCClient
 	err := s.collection.FindOne(ctx, bson.M{"_id": clientID}).Decode(&client)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("getting OIDC client: %w", err)
@@ -380,7 +381,7 @@ func (s *SessionStore) GetByID(ctx context.Context, id string) (*domain.PendingA
 	var session domain.PendingAuth
 	err := s.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&session)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("getting auth session: %w", err)
@@ -396,7 +397,7 @@ func (s *SessionStore) FindByCode(ctx context.Context, tenantID domain.TenantID,
 		"stage":     "done",
 	}).Decode(&session)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, fmt.Errorf("finding session by code: %w", err)
