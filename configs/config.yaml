@@ -1,0 +1,45 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  admin_port: 8081
+  base_url: "http://localhost:8080"
+  tls:
+    enabled: false
+    # cert_file: "/etc/tls/server.crt"
+    # key_file: "/etc/tls/server.key"
+    # min_version: "1.2"
+  # admin_tls:
+  #   enabled: false
+  #   cert_file: "/etc/tls/admin.crt"
+  #   key_file: "/etc/tls/admin.key"
+
+storage:
+  type: "memory"
+  mongodb:
+    uri: "mongodb://localhost:27017"
+    database: "invite_op"
+    timeout: 10
+    # password_path: "/run/secrets/mongodb-password"
+    # tls_enabled: false
+    # ca_path: ""
+    # cert_path: ""
+    # key_path: ""
+
+logging:
+  level: "debug"
+  format: "text"
+
+jwt:
+  secret: "change-me-in-production"
+  issuer: "go-invite-op"
+
+smtp:
+  # host: "smtp.example.com"
+  # port: 587
+  # username: ""
+  # password: ""
+  # from: "noreply@example.com"
+
+op:
+  session_timeout: 600
+  cleanup_interval: 3600
