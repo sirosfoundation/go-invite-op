@@ -1,12 +1,23 @@
 package op
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"html/template"
+	"math/big"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -23,20 +34,98 @@ import (
 
 // Provider implements the OpenID Provider endpoints.
 type Provider struct {
-	store   storage.Store
-	cfg     *config.Config
-	emailer email.Sender
-	logger  *zap.Logger
+	store      storage.Store
+	cfg        *config.Config
+	emailer    email.Sender
+	logger     *zap.Logger
+	signingKey crypto.Signer
+	keyID      string
+	signingAlg string
 }
 
-// NewProvider creates a new OP provider.
-func NewProvider(store storage.Store, cfg *config.Config, emailer email.Sender, logger *zap.Logger) *Provider {
-	return &Provider{
+// NewProvider creates a new OP provider. It loads or generates the signing key.
+func NewProvider(store storage.Store, cfg *config.Config, emailer email.Sender, logger *zap.Logger) (*Provider, error) {
+	p := &Provider{
 		store:   store,
 		cfg:     cfg,
 		emailer: emailer,
 		logger:  logger.Named("op"),
 	}
+
+	if err := p.loadOrGenerateKey(); err != nil {
+		return nil, fmt.Errorf("loading signing key: %w", err)
+	}
+	return p, nil
+}
+
+// loadOrGenerateKey loads an RSA/EC key from jwt.key_file, or generates an
+// ephemeral RSA-2048 key if none is configured.
+func (p *Provider) loadOrGenerateKey() error {
+	if p.cfg.JWT.KeyFile != "" {
+		data, err := os.ReadFile(p.cfg.JWT.KeyFile)
+		if err != nil {
+			return fmt.Errorf("reading key file: %w", err)
+		}
+		block, _ := pem.Decode(data)
+		if block == nil {
+			return fmt.Errorf("no PEM block found in key file")
+		}
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			// Try PKCS1 for RSA keys
+			rsaKey, rsaErr := x509.ParsePKCS1PrivateKey(block.Bytes)
+			if rsaErr != nil {
+				// Try EC private key
+				ecKey, ecErr := x509.ParseECPrivateKey(block.Bytes)
+				if ecErr != nil {
+					return fmt.Errorf("parsing private key: %w", err)
+				}
+				key = ecKey
+			} else {
+				key = rsaKey
+			}
+		}
+		signer, ok := key.(crypto.Signer)
+		if !ok {
+			return fmt.Errorf("key does not implement crypto.Signer")
+		}
+		p.signingKey = signer
+	} else {
+		// Generate ephemeral RSA key
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return fmt.Errorf("generating ephemeral RSA key: %w", err)
+		}
+		p.signingKey = key
+		p.logger.Warn("No jwt.key_file configured; using ephemeral RSA key (tokens will not survive restarts)")
+	}
+
+	// Determine algorithm from key type
+	switch k := p.signingKey.(type) {
+	case *rsa.PrivateKey:
+		p.signingAlg = "RS256"
+	case *ecdsa.PrivateKey:
+		switch k.Curve {
+		case elliptic.P384():
+			p.signingAlg = "ES384"
+		case elliptic.P521():
+			p.signingAlg = "ES512"
+		default:
+			p.signingAlg = "ES256"
+		}
+	default:
+		return fmt.Errorf("unsupported key type %T", p.signingKey)
+	}
+
+	// Compute key ID from public key thumbprint (SHA-256, first 8 bytes hex)
+	pubBytes, err := x509.MarshalPKIXPublicKey(p.signingKey.Public())
+	if err != nil {
+		return fmt.Errorf("marshalling public key: %w", err)
+	}
+	thumbprint := sha256.Sum256(pubBytes)
+	p.keyID = hex.EncodeToString(thumbprint[:8])
+
+	return nil
 }
 
 // RegisterRoutes registers OP routes on the router.
@@ -64,22 +153,85 @@ func (p *Provider) Discovery(c *gin.Context) {
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code"},
 		"subject_types_supported":               []string{"public"},
-		"id_token_signing_alg_values_supported": []string{"HS256"},
+		"id_token_signing_alg_values_supported": []string{p.signingAlg},
 		"scopes_supported":                      []string{"openid", "email"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_post", "none"},
+		"code_challenge_methods_supported":      []string{"S256"},
 	})
 }
 
-// JWKS returns the JSON Web Key Set. Currently empty since HS256 uses a shared
-// secret. Present for OIDC Discovery compliance and forward-compatibility with
-// asymmetric signing algorithms.
+// JWKS returns the JSON Web Key Set containing the provider's public signing key.
 func (p *Provider) JWKS(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"keys": []interface{}{}})
+	jwk, err := p.publicKeyJWK()
+	if err != nil {
+		p.logger.Error("Failed to build JWK", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"keys": []interface{}{jwk}})
+}
+
+// publicKeyJWK returns the public key as a JWK map.
+func (p *Provider) publicKeyJWK() (map[string]interface{}, error) {
+	switch pub := p.signingKey.Public().(type) {
+	case *rsa.PublicKey:
+		return map[string]interface{}{
+			"kty": "RSA",
+			"use": "sig",
+			"alg": p.signingAlg,
+			"kid": p.keyID,
+			"n":   base64URLEncodeBigInt(pub.N),
+			"e":   base64URLEncodeBigInt(big.NewInt(int64(pub.E))),
+		}, nil
+	case *ecdsa.PublicKey:
+		var crv string
+		var coordLen int
+		switch pub.Curve {
+		case elliptic.P256():
+			crv = "P-256"
+			coordLen = 32
+		case elliptic.P384():
+			crv = "P-384"
+			coordLen = 48
+		case elliptic.P521():
+			crv = "P-521"
+			coordLen = 66
+		default:
+			return nil, fmt.Errorf("unsupported EC curve")
+		}
+		// Use Bytes() to get the uncompressed point (0x04 || X || Y)
+		uncompressed, err := pub.Bytes()
+		if err != nil {
+			return nil, fmt.Errorf("encoding EC public key: %w", err)
+		}
+		if len(uncompressed) != 1+2*coordLen {
+			return nil, fmt.Errorf("unexpected EC public key length")
+		}
+		xBytes := uncompressed[1 : 1+coordLen]
+		yBytes := uncompressed[1+coordLen:]
+		return map[string]interface{}{
+			"kty": "EC",
+			"use": "sig",
+			"alg": p.signingAlg,
+			"kid": p.keyID,
+			"crv": crv,
+			"x":   base64.RawURLEncoding.EncodeToString(xBytes),
+			"y":   base64.RawURLEncoding.EncodeToString(yBytes),
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported key type %T", pub)
+	}
+}
+
+func base64URLEncodeBigInt(n *big.Int) string {
+	return base64.RawURLEncoding.EncodeToString(n.Bytes())
 }
 
 // RegisterClientRequest is the dynamic client registration request.
 type RegisterClientRequest struct {
-	RedirectURIs []string `json:"redirect_uris" binding:"required"`
-	ClientName   string   `json:"client_name,omitempty"`
+	RedirectURIs            []string `json:"redirect_uris" binding:"required"`
+	ClientName              string   `json:"client_name,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 }
 
 // RegisterClient handles dynamic client registration.
@@ -95,19 +247,34 @@ func (p *Provider) RegisterClient(c *gin.Context) {
 		return
 	}
 
-	clientID := uuid.New().String()
-	clientSecret, err := generateRandom(32)
-	if err != nil {
-		p.logger.Error("Failed to generate client secret", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+	authMethod := req.TokenEndpointAuthMethod
+	if authMethod == "" {
+		authMethod = "client_secret_post"
+	}
+	if authMethod != "client_secret_post" && authMethod != "none" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported token_endpoint_auth_method"})
 		return
 	}
 
+	clientID := uuid.New().String()
+	var clientSecret string
+
+	if authMethod != "none" {
+		var err error
+		clientSecret, err = generateRandom(32)
+		if err != nil {
+			p.logger.Error("Failed to generate client secret", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+	}
+
 	client := &domain.OIDCClient{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		RedirectURIs: req.RedirectURIs,
-		ClientName:   req.ClientName,
+		ClientID:                clientID,
+		ClientSecret:            clientSecret,
+		RedirectURIs:            req.RedirectURIs,
+		ClientName:              req.ClientName,
+		TokenEndpointAuthMethod: authMethod,
 	}
 
 	if err := p.store.Clients().Create(c.Request.Context(), client); err != nil {
@@ -116,12 +283,17 @@ func (p *Provider) RegisterClient(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"client_id":     client.ClientID,
-		"client_secret": client.ClientSecret,
-		"redirect_uris": client.RedirectURIs,
-		"client_name":   client.ClientName,
-	})
+	resp := gin.H{
+		"client_id":                  client.ClientID,
+		"redirect_uris":              client.RedirectURIs,
+		"client_name":                client.ClientName,
+		"token_endpoint_auth_method": client.TokenEndpointAuthMethod,
+	}
+	if clientSecret != "" {
+		resp["client_secret"] = clientSecret
+	}
+
+	c.JSON(http.StatusCreated, resp)
 }
 
 // AuthorizeGet shows the email input form.
@@ -132,6 +304,8 @@ func (p *Provider) AuthorizeGet(c *gin.Context) {
 	state := c.Query("state")
 	nonce := c.Query("nonce")
 	responseType := c.Query("response_type")
+	codeChallenge := c.Query("code_challenge")
+	codeChallengeMethod := c.Query("code_challenge_method")
 
 	if responseType != "code" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported_response_type"})
@@ -149,15 +323,34 @@ func (p *Provider) AuthorizeGet(c *gin.Context) {
 		return
 	}
 
+	// Public clients MUST use PKCE
+	if client.IsPublic() && codeChallenge == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": "code_challenge required for public clients"})
+		return
+	}
+
+	// Only S256 is supported when PKCE is used
+	if codeChallenge != "" {
+		if codeChallengeMethod == "" {
+			codeChallengeMethod = "S256"
+		}
+		if codeChallengeMethod != "S256" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": "only S256 code_challenge_method is supported"})
+			return
+		}
+	}
+
 	sessionID := uuid.New().String()
 	session := &domain.PendingAuth{
-		ID:          sessionID,
-		TenantID:    domain.TenantID(tenant),
-		ClientID:    clientID,
-		RedirectURI: redirectURI,
-		State:       state,
-		Nonce:       nonce,
-		Stage:       "email",
+		ID:                  sessionID,
+		TenantID:            domain.TenantID(tenant),
+		ClientID:            clientID,
+		RedirectURI:         redirectURI,
+		State:               state,
+		Nonce:               nonce,
+		Stage:               "email",
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: codeChallengeMethod,
 	}
 
 	if err := p.store.Sessions().Create(c.Request.Context(), session); err != nil {
@@ -282,13 +475,29 @@ func (p *Provider) Token(c *gin.Context) {
 	code := c.PostForm("code")
 	clientID := c.PostForm("client_id")
 	clientSecret := c.PostForm("client_secret")
+	codeVerifier := c.PostForm("code_verifier")
 	redirectURI := c.PostForm("redirect_uri")
 	tenant := c.Param("tenant")
 
 	client, err := p.store.Clients().GetByID(c.Request.Context(), clientID)
-	if err != nil || client.ClientSecret != clientSecret {
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
 		return
+	}
+
+	// Authenticate the client based on its auth method
+	if client.IsPublic() {
+		// Public clients authenticate via PKCE (verified below)
+		if codeVerifier == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": "code_verifier required for public clients"})
+			return
+		}
+	} else {
+		// Confidential clients authenticate via client_secret
+		if clientSecret != client.ClientSecret {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
+			return
+		}
 	}
 
 	session, err := p.store.Sessions().FindByCode(c.Request.Context(), domain.TenantID(tenant), code)
@@ -307,6 +516,18 @@ func (p *Provider) Token(c *gin.Context) {
 		return
 	}
 
+	// Verify PKCE code_verifier if a code_challenge was stored
+	if session.CodeChallenge != "" {
+		if codeVerifier == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": "code_verifier required"})
+			return
+		}
+		if !verifyCodeChallenge(session.CodeChallenge, session.CodeChallengeMethod, codeVerifier) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": "code_verifier mismatch"})
+			return
+		}
+	}
+
 	baseURL := strings.TrimRight(p.cfg.Server.BaseURL, "/")
 	issuer := fmt.Sprintf("%s/%s", baseURL, tenant)
 
@@ -323,8 +544,11 @@ func (p *Provider) Token(c *gin.Context) {
 		claims["nonce"] = session.Nonce
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	idToken, err := token.SignedString([]byte(p.cfg.JWT.Secret))
+	signingMethod := p.jwtSigningMethod()
+	token := jwt.NewWithClaims(signingMethod, claims)
+	token.Header["kid"] = p.keyID
+
+	idToken, err := token.SignedString(p.signingKey)
 	if err != nil {
 		p.logger.Error("Failed to sign ID token", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
@@ -348,6 +572,40 @@ func isValidRedirectURI(client *domain.OIDCClient, uri string) bool {
 		}
 	}
 	return false
+}
+
+// verifyCodeChallenge validates a PKCE code_verifier against the stored code_challenge.
+// Only S256 is supported per RFC 7636.
+func verifyCodeChallenge(challenge, method, verifier string) bool {
+	if method != "S256" {
+		return false
+	}
+	h := sha256.Sum256([]byte(verifier))
+	computed := base64.RawURLEncoding.EncodeToString(h[:])
+	return computed == challenge
+}
+
+// jwtSigningMethod returns the jwt.SigningMethod for the provider's key type.
+func (p *Provider) jwtSigningMethod() jwt.SigningMethod {
+	switch p.signingAlg {
+	case "ES256":
+		return jwt.SigningMethodES256
+	case "ES384":
+		return jwt.SigningMethodES384
+	case "ES512":
+		return jwt.SigningMethodES512
+	default:
+		return jwt.SigningMethodRS256
+	}
+}
+
+// MarshalJWKS returns the JWKS as JSON bytes (for testing convenience).
+func (p *Provider) MarshalJWKS() ([]byte, error) {
+	jwk, err := p.publicKeyJWK()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(map[string]interface{}{"keys": []interface{}{jwk}})
 }
 
 func generateRandom(n int) (string, error) {
