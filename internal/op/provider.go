@@ -7,11 +7,13 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"html/template"
 	"math/big"
@@ -78,7 +80,7 @@ func (p *Provider) loadOrGenerateKey() error {
 				// Try EC private key
 				ecKey, ecErr := x509.ParseECPrivateKey(block.Bytes)
 				if ecErr != nil {
-					return fmt.Errorf("parsing private key: %w", err)
+					return fmt.Errorf("parsing private key: tried PKCS8, PKCS1, and EC formats: %w", errors.Join(err, rsaErr, ecErr))
 				}
 				key = ecKey
 			} else {
@@ -575,14 +577,15 @@ func isValidRedirectURI(client *domain.OIDCClient, uri string) bool {
 }
 
 // verifyCodeChallenge validates a PKCE code_verifier against the stored code_challenge.
-// Only S256 is supported per RFC 7636.
+// Only S256 is supported per RFC 7636. Uses constant-time comparison to avoid
+// timing side channels.
 func verifyCodeChallenge(challenge, method, verifier string) bool {
 	if method != "S256" {
 		return false
 	}
 	h := sha256.Sum256([]byte(verifier))
 	computed := base64.RawURLEncoding.EncodeToString(h[:])
-	return computed == challenge
+	return subtle.ConstantTimeCompare([]byte(computed), []byte(challenge)) == 1
 }
 
 // jwtSigningMethod returns the jwt.SigningMethod for the provider's key type.
