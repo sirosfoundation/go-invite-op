@@ -109,6 +109,7 @@ func main() {
 		health.WithCacheTTL(2*time.Second),
 		health.WithCheckTimeout(2*time.Second),
 	)
+	readiness.AddChecker(health.NewDatabaseChecker("storage", store))
 	readiness.StartBackgroundProbe(5 * time.Second)
 
 	// Email sender

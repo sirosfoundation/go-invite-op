@@ -177,7 +177,9 @@ func (s *ClientStore) Create(_ context.Context, client *domain.OIDCClient) error
 func (s *ClientStore) Upsert(_ context.Context, client *domain.OIDCClient) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.data[client.ClientID]; !exists {
+	if existing, exists := s.data[client.ClientID]; exists {
+		client.CreatedAt = existing.CreatedAt
+	} else {
 		client.CreatedAt = time.Now()
 	}
 	s.data[client.ClientID] = client
