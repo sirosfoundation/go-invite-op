@@ -629,8 +629,7 @@ func (p *Provider) resolveClient(ctx context.Context, tenant, clientID string) (
 			TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
 		}, nil
 	}
-	return nil, err
-
+	return nil, fmt.Errorf("client not found: %s", clientID)
 }
 
 func generateRandom(n int) (string, error) {
