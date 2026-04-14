@@ -172,6 +172,53 @@ storage:
 	assert.Equal(t, "mongodb://user:s3cret@dbhost:27017", cfg.Storage.MongoDB.URI)
 }
 
+func TestSMTPPasswordFromFile(t *testing.T) {
+	dir := t.TempDir()
+
+	pwFile := filepath.Join(dir, "smtp-pw")
+	err := os.WriteFile(pwFile, []byte("smtp-s3cret\n"), 0600)
+	require.NoError(t, err)
+
+	yamlFile := filepath.Join(dir, "config.yaml")
+	err = os.WriteFile(yamlFile, []byte(`
+smtp:
+  host: "mail.example.com"
+  port: 587
+  username: "sender"
+  password_path: "`+pwFile+`"
+  from: "noreply@example.com"
+`), 0644)
+	require.NoError(t, err)
+
+	cfg, err := Load(yamlFile)
+	require.NoError(t, err)
+	assert.Equal(t, "smtp-s3cret", cfg.SMTP.Password)
+}
+
+func TestSMTPPasswordPathOverridesPassword(t *testing.T) {
+	dir := t.TempDir()
+
+	pwFile := filepath.Join(dir, "smtp-pw")
+	err := os.WriteFile(pwFile, []byte("from-file\n"), 0600)
+	require.NoError(t, err)
+
+	yamlFile := filepath.Join(dir, "config.yaml")
+	err = os.WriteFile(yamlFile, []byte(`
+smtp:
+  host: "mail.example.com"
+  port: 587
+  username: "sender"
+  password: "inline-password"
+  password_path: "`+pwFile+`"
+  from: "noreply@example.com"
+`), 0644)
+	require.NoError(t, err)
+
+	cfg, err := Load(yamlFile)
+	require.NoError(t, err)
+	assert.Equal(t, "from-file", cfg.SMTP.Password)
+}
+
 func TestEffectiveAdminTLS(t *testing.T) {
 	shared := &TLSConfig{Enabled: true, CertFile: "shared.crt", KeyFile: "shared.key"}
 	admin := &TLSConfig{Enabled: true, CertFile: "admin.crt", KeyFile: "admin.key"}
