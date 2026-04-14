@@ -46,7 +46,8 @@ smtp:
   host: "smtp.example.com"
   port: 587
   username: "noreply@example.com"
-  password: ""
+  # password: ""  # Use password_path instead for production
+  password_path: "/run/secrets/smtp-password"
   from: "noreply@example.com"
 
 op:
