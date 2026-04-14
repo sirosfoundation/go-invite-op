@@ -161,11 +161,53 @@ func (r *RateLimitConfig) SetDefaults() {
 }
 
 // StaticClientConfig defines a statically configured OIDC client.
+// Fields may contain the placeholder ${tenant} which is substituted with the
+// requesting tenant ID at runtime, allowing a single entry to serve multiple tenants.
 type StaticClientConfig struct {
 	ClientID                string   `yaml:"client_id"`
 	ClientName              string   `yaml:"client_name,omitempty"`
 	RedirectURIs            []string `yaml:"redirect_uris"`
 	TokenEndpointAuthMethod string   `yaml:"token_endpoint_auth_method,omitempty"`
+}
+
+// HasTemplates returns true if any field in the config contains the ${tenant} placeholder.
+func (s *StaticClientConfig) HasTemplates() bool {
+	if strings.Contains(s.ClientID, "${tenant}") || strings.Contains(s.ClientName, "${tenant}") {
+		return true
+	}
+	for _, uri := range s.RedirectURIs {
+		if strings.Contains(uri, "${tenant}") {
+			return true
+		}
+	}
+	return false
+}
+
+// ExpandForTenant returns a copy of the config with ${tenant} replaced by the given tenant string.
+func (s *StaticClientConfig) ExpandForTenant(tenant string) StaticClientConfig {
+	uris := make([]string, len(s.RedirectURIs))
+	for i, uri := range s.RedirectURIs {
+		uris[i] = strings.ReplaceAll(uri, "${tenant}", tenant)
+	}
+	return StaticClientConfig{
+		ClientID:                strings.ReplaceAll(s.ClientID, "${tenant}", tenant),
+		ClientName:              strings.ReplaceAll(s.ClientName, "${tenant}", tenant),
+		RedirectURIs:            uris,
+		TokenEndpointAuthMethod: s.TokenEndpointAuthMethod,
+	}
+}
+
+// ResolveClientForTenant searches the static client list for an entry whose
+// client_id — after expanding ${tenant} — equals the given clientID.
+// It returns the fully-expanded config and true when found.
+func (o *OPConfig) ResolveClientForTenant(tenant, clientID string) (*StaticClientConfig, bool) {
+	for i := range o.StaticClients {
+		expanded := o.StaticClients[i].ExpandForTenant(tenant)
+		if expanded.ClientID == clientID {
+			return &expanded, true
+		}
+	}
+	return nil, false
 }
 
 // OPConfig contains OpenID Provider configuration.

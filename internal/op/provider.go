@@ -1,6 +1,7 @@
 package op
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -314,7 +315,7 @@ func (p *Provider) AuthorizeGet(c *gin.Context) {
 		return
 	}
 
-	client, err := p.store.Clients().GetByID(c.Request.Context(), clientID)
+	client, err := p.resolveClient(c.Request.Context(), tenant, clientID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_client"})
 		return
@@ -481,7 +482,7 @@ func (p *Provider) Token(c *gin.Context) {
 	redirectURI := c.PostForm("redirect_uri")
 	tenant := c.Param("tenant")
 
-	client, err := p.store.Clients().GetByID(c.Request.Context(), clientID)
+	client, err := p.resolveClient(c.Request.Context(), tenant, clientID)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
 		return
@@ -609,6 +610,27 @@ func (p *Provider) MarshalJWKS() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(map[string]interface{}{"keys": []interface{}{jwk}})
+}
+
+// resolveClient returns the OIDC client for the given tenant and clientID.
+// It first checks the store; if not found, it falls back to expanding any
+// static client template entries in the configuration whose client_id matches
+// after substituting ${tenant} with the provided tenant string.
+func (p *Provider) resolveClient(ctx context.Context, tenant, clientID string) (*domain.OIDCClient, error) {
+	client, err := p.store.Clients().GetByID(ctx, clientID)
+	if err == nil {
+		return client, nil
+	}
+	if sc, ok := p.cfg.OP.ResolveClientForTenant(tenant, clientID); ok {
+		return &domain.OIDCClient{
+			ClientID:                sc.ClientID,
+			ClientName:              sc.ClientName,
+			RedirectURIs:            sc.RedirectURIs,
+			TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
+		}, nil
+	}
+	return nil, err
+
 }
 
 func generateRandom(n int) (string, error) {

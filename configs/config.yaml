@@ -44,9 +44,18 @@ op:
   session_timeout: 600
   cleanup_interval: 3600
   # static_clients:
+  #   # Non-templated: seeded once at startup, available to all tenants
   #   - client_id: "siros-tenant-foobar"
   #     client_name: "Foobar Inc."
   #     redirect_uris:
   #       - https://id.siros.org/id/foobar/oidc/cb
   #     # Public client with PKCE
+  #     token_endpoint_auth_method: "none"
+  #
+  #   # Templated: ${tenant} is substituted with the requesting tenant at runtime.
+  #   # This allows one config entry to serve all tenants automatically.
+  #   - client_id: "client-${tenant}-wallet"
+  #     client_name: "Wallet (${tenant})"
+  #     redirect_uris:
+  #       - https://id.siros.org/id/${tenant}/oidc/cb
   #     token_endpoint_auth_method: "none"

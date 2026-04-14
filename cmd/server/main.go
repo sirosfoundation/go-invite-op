@@ -83,11 +83,19 @@ func main() {
 		logger.Info("Using in-memory storage")
 	}
 
-	// Load static clients from configuration
+	// Load static clients from configuration.
+	// Clients without template placeholders are seeded into the store so that
+	// they survive across tenants and are visible to the admin API.
+	// Clients that use ${tenant} are resolved at request time by the provider.
 	if len(cfg.OP.StaticClients) > 0 {
 		seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer seedCancel()
 		for _, sc := range cfg.OP.StaticClients {
+			if sc.HasTemplates() {
+				logger.Info("Static OIDC client uses templates; will be resolved per-tenant at request time",
+					zap.String("client_id_template", sc.ClientID))
+				continue
+			}
 			client := &domain.OIDCClient{
 				ClientID:                sc.ClientID,
 				ClientName:              sc.ClientName,
