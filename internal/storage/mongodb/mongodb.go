@@ -348,6 +348,28 @@ func (s *ClientStore) Create(ctx context.Context, client *domain.OIDCClient) err
 	return nil
 }
 
+func (s *ClientStore) Upsert(ctx context.Context, client *domain.OIDCClient) error {
+	now := time.Now()
+	filter := bson.M{"_id": client.ClientID}
+	update := bson.M{
+		"$set": bson.M{
+			"client_secret":              client.ClientSecret,
+			"redirect_uris":              client.RedirectURIs,
+			"client_name":                client.ClientName,
+			"token_endpoint_auth_method": client.TokenEndpointAuthMethod,
+		},
+		"$setOnInsert": bson.M{
+			"created_at": now,
+		},
+	}
+	opts := options.Update().SetUpsert(true)
+	_, err := s.collection.UpdateOne(ctx, filter, update, opts)
+	if err != nil {
+		return fmt.Errorf("upserting OIDC client: %w", err)
+	}
+	return nil
+}
+
 func (s *ClientStore) GetByID(ctx context.Context, clientID string) (*domain.OIDCClient, error) {
 	var client domain.OIDCClient
 	err := s.collection.FindOne(ctx, bson.M{"_id": clientID}).Decode(&client)

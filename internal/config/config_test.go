@@ -57,6 +57,64 @@ jwt:
 	assert.Equal(t, "my-secret", cfg.JWT.Secret)
 }
 
+func TestLoadStaticClients(t *testing.T) {
+	dir := t.TempDir()
+	yamlFile := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(yamlFile, []byte(`
+op:
+  static_clients:
+    - client_id: "siros-tenant-foobar"
+      client_name: "Foobar Inc."
+      redirect_uris:
+        - https://id.siros.org/id/foobar/oidc/cb
+      token_endpoint_auth_method: "none"
+    - client_id: "confidential-client"
+      redirect_uris:
+        - https://app.example.com/callback
+`), 0644)
+	require.NoError(t, err)
+
+	cfg, err := Load(yamlFile)
+	require.NoError(t, err)
+
+	require.Len(t, cfg.OP.StaticClients, 2)
+
+	assert.Equal(t, "siros-tenant-foobar", cfg.OP.StaticClients[0].ClientID)
+	assert.Equal(t, "Foobar Inc.", cfg.OP.StaticClients[0].ClientName)
+	assert.Equal(t, []string{"https://id.siros.org/id/foobar/oidc/cb"}, cfg.OP.StaticClients[0].RedirectURIs)
+	assert.Equal(t, "none", cfg.OP.StaticClients[0].TokenEndpointAuthMethod)
+
+	assert.Equal(t, "confidential-client", cfg.OP.StaticClients[1].ClientID)
+	assert.Equal(t, []string{"https://app.example.com/callback"}, cfg.OP.StaticClients[1].RedirectURIs)
+	assert.Equal(t, "", cfg.OP.StaticClients[1].TokenEndpointAuthMethod)
+}
+
+func TestValidateStaticClientMissingClientID(t *testing.T) {
+	cfg := &Config{
+		Server:  ServerConfig{Port: 8080, AdminPort: 8081},
+		Storage: StorageConfig{Type: "memory"},
+		OP: OPConfig{
+			StaticClients: []StaticClientConfig{
+				{RedirectURIs: []string{"https://example.com/cb"}},
+			},
+		},
+	}
+	assert.Error(t, cfg.Validate())
+}
+
+func TestValidateStaticClientMissingRedirectURIs(t *testing.T) {
+	cfg := &Config{
+		Server:  ServerConfig{Port: 8080, AdminPort: 8081},
+		Storage: StorageConfig{Type: "memory"},
+		OP: OPConfig{
+			StaticClients: []StaticClientConfig{
+				{ClientID: "my-client"},
+			},
+		},
+	}
+	assert.Error(t, cfg.Validate())
+}
+
 func TestValidateInvalidStorageType(t *testing.T) {
 	cfg := &Config{
 		Server:  ServerConfig{Port: 8080, AdminPort: 8081},

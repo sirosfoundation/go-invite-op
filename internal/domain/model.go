@@ -58,7 +58,7 @@ type OIDCClient struct {
 	CreatedAt               time.Time `json:"created_at" bson:"created_at"`
 }
 
-// IsPublic returns true if this client uses no client authentication (PKCE-only).
+// IsPublic returns true if the client uses no client authentication at the token endpoint.
 func (c *OIDCClient) IsPublic() bool {
 	return c.TokenEndpointAuthMethod == "none"
 }

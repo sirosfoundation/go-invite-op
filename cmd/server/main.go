@@ -20,6 +20,7 @@ import (
 
 	"github.com/sirosfoundation/go-invite-op/internal/api"
 	"github.com/sirosfoundation/go-invite-op/internal/config"
+	"github.com/sirosfoundation/go-invite-op/internal/domain"
 	"github.com/sirosfoundation/go-invite-op/internal/email"
 	"github.com/sirosfoundation/go-invite-op/internal/health"
 	"github.com/sirosfoundation/go-invite-op/internal/op"
@@ -82,12 +83,32 @@ func main() {
 		logger.Info("Using in-memory storage")
 	}
 
+	// Load static clients from configuration
+	if len(cfg.OP.StaticClients) > 0 {
+		seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer seedCancel()
+		for _, sc := range cfg.OP.StaticClients {
+			client := &domain.OIDCClient{
+				ClientID:                sc.ClientID,
+				ClientName:              sc.ClientName,
+				RedirectURIs:            sc.RedirectURIs,
+				TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
+			}
+			if err := store.Clients().Upsert(seedCtx, client); err != nil {
+				logger.Fatal("Failed to seed static OIDC client",
+					zap.String("client_id", sc.ClientID),
+					zap.Error(err),
+				)
+			}
+			logger.Info("Seeded static OIDC client", zap.String("client_id", sc.ClientID))
+		}
+	}
+
 	// Readiness manager
 	readiness := health.NewReadinessManager(
 		health.WithCacheTTL(2*time.Second),
 		health.WithCheckTimeout(2*time.Second),
 	)
-	readiness.AddChecker(health.NewDatabaseChecker("storage", store))
 	readiness.StartBackgroundProbe(5 * time.Second)
 
 	// Email sender

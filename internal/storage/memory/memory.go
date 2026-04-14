@@ -174,6 +174,16 @@ func (s *ClientStore) Create(_ context.Context, client *domain.OIDCClient) error
 	return nil
 }
 
+func (s *ClientStore) Upsert(_ context.Context, client *domain.OIDCClient) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.data[client.ClientID]; !exists {
+		client.CreatedAt = time.Now()
+	}
+	s.data[client.ClientID] = client
+	return nil
+}
+
 func (s *ClientStore) GetByID(_ context.Context, clientID string) (*domain.OIDCClient, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -43,3 +43,10 @@ smtp:
 op:
   session_timeout: 600
   cleanup_interval: 3600
+  # static_clients:
+  #   - client_id: "siros-tenant-foobar"
+  #     client_name: "Foobar Inc."
+  #     redirect_uris:
+  #       - https://id.siros.org/id/foobar/oidc/cb
+  #     # Public client with PKCE
+  #     token_endpoint_auth_method: "none"

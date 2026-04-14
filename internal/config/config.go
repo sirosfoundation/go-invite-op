@@ -160,12 +160,21 @@ func (r *RateLimitConfig) SetDefaults() {
 	}
 }
 
+// StaticClientConfig defines a statically configured OIDC client.
+type StaticClientConfig struct {
+	ClientID                string   `yaml:"client_id"`
+	ClientName              string   `yaml:"client_name,omitempty"`
+	RedirectURIs            []string `yaml:"redirect_uris"`
+	TokenEndpointAuthMethod string   `yaml:"token_endpoint_auth_method,omitempty"`
+}
+
 // OPConfig contains OpenID Provider configuration.
 type OPConfig struct {
-	Issuer             string          `yaml:"issuer" envconfig:"ISSUER"`
-	SessionTimeout     int             `yaml:"session_timeout" envconfig:"SESSION_TIMEOUT"`
-	CleanupIntervalSec int             `yaml:"cleanup_interval" envconfig:"CLEANUP_INTERVAL"`
-	RateLimit          RateLimitConfig `yaml:"rate_limit" envconfig:"RATE_LIMIT"`
+	Issuer             string               `yaml:"issuer" envconfig:"ISSUER"`
+	SessionTimeout     int                  `yaml:"session_timeout" envconfig:"SESSION_TIMEOUT"`
+	CleanupIntervalSec int                  `yaml:"cleanup_interval" envconfig:"CLEANUP_INTERVAL"`
+	RateLimit          RateLimitConfig      `yaml:"rate_limit" envconfig:"RATE_LIMIT"`
+	StaticClients      []StaticClientConfig `yaml:"static_clients"`
 }
 
 // Load reads configuration from a YAML file and applies env var overrides.
@@ -305,6 +314,14 @@ func (c *Config) Validate() error {
 			if origin == "*" {
 				return fmt.Errorf("CORS: allow_credentials cannot be true when allowed_origins contains '*'")
 			}
+		}
+	}
+	for i, sc := range c.OP.StaticClients {
+		if sc.ClientID == "" {
+			return fmt.Errorf("op.static_clients[%d]: client_id is required", i)
+		}
+		if len(sc.RedirectURIs) == 0 {
+			return fmt.Errorf("op.static_clients[%d] (%s): redirect_uris must not be empty", i, sc.ClientID)
 		}
 	}
 	return nil
