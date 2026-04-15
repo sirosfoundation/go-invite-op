@@ -163,17 +163,19 @@ func (r *RateLimitConfig) SetDefaults() {
 // StaticClientConfig defines a statically configured OIDC client.
 // Fields may contain the placeholder ${tenant} which is substituted with the
 // requesting tenant ID at runtime, allowing a single entry to serve multiple tenants.
+// Static clients are always public (token_endpoint_auth_method: none).
 type StaticClientConfig struct {
 	ClientID                string   `yaml:"client_id"`
 	ClientName              string   `yaml:"client_name,omitempty"`
-	ClientSecret            string   `yaml:"client_secret,omitempty"`
+	TenantID                string   `yaml:"tenant_id,omitempty"`
 	RedirectURIs            []string `yaml:"redirect_uris"`
 	TokenEndpointAuthMethod string   `yaml:"token_endpoint_auth_method,omitempty"`
 }
 
 // HasTemplates returns true if any field in the config contains the ${tenant} placeholder.
 func (s *StaticClientConfig) HasTemplates() bool {
-	if strings.Contains(s.ClientID, "${tenant}") || strings.Contains(s.ClientName, "${tenant}") {
+	if strings.Contains(s.ClientID, "${tenant}") || strings.Contains(s.ClientName, "${tenant}") ||
+		strings.Contains(s.TenantID, "${tenant}") {
 		return true
 	}
 	for _, uri := range s.RedirectURIs {
@@ -193,19 +195,20 @@ func (s *StaticClientConfig) ExpandForTenant(tenant string) StaticClientConfig {
 	return StaticClientConfig{
 		ClientID:                strings.ReplaceAll(s.ClientID, "${tenant}", tenant),
 		ClientName:              strings.ReplaceAll(s.ClientName, "${tenant}", tenant),
-		ClientSecret:            s.ClientSecret,
+		TenantID:                strings.ReplaceAll(s.TenantID, "${tenant}", tenant),
 		RedirectURIs:            uris,
 		TokenEndpointAuthMethod: s.TokenEndpointAuthMethod,
 	}
 }
 
 // ResolveClientForTenant searches the static client list for an entry whose
-// client_id — after expanding ${tenant} — equals the given clientID.
+// client_id — after expanding ${tenant} — equals the given clientID,
+// and whose tenant_id (if set) matches the given tenant.
 // It returns the fully-expanded config and true when found.
 func (o *OPConfig) ResolveClientForTenant(tenant, clientID string) (*StaticClientConfig, bool) {
 	for i := range o.StaticClients {
 		expanded := o.StaticClients[i].ExpandForTenant(tenant)
-		if expanded.ClientID == clientID {
+		if expanded.ClientID == clientID && (expanded.TenantID == "" || expanded.TenantID == tenant) {
 			return &expanded, true
 		}
 	}
@@ -367,33 +370,17 @@ func (c *Config) Validate() error {
 		if len(sc.RedirectURIs) == 0 {
 			return fmt.Errorf("op.static_clients[%d] (%s): redirect_uris must not be empty", i, sc.ClientID)
 		}
+		if !sc.HasTemplates() && sc.TenantID == "" {
+			return fmt.Errorf("op.static_clients[%d] (%s): tenant_id is required for non-templated static clients", i, sc.ClientID)
+		}
 		authMethod := sc.TokenEndpointAuthMethod
 		if authMethod == "" {
-			if sc.ClientSecret == "" {
-				authMethod = "none"
-			} else {
-				authMethod = "client_secret_post"
-			}
+			authMethod = "none"
 		}
-		switch authMethod {
-		case "none", "client_secret_basic", "client_secret_post":
-			// ok
-		default:
+		if authMethod != "none" {
 			return fmt.Errorf(
-				"op.static_clients[%d] (%s): invalid token_endpoint_auth_method %q",
+				"op.static_clients[%d] (%s): static clients must use token_endpoint_auth_method \"none\" (public); got %q",
 				i, sc.ClientID, sc.TokenEndpointAuthMethod,
-			)
-		}
-		if authMethod == "none" && sc.ClientSecret != "" {
-			return fmt.Errorf(
-				"op.static_clients[%d] (%s): client_secret must not be set when token_endpoint_auth_method is none",
-				i, sc.ClientID,
-			)
-		}
-		if authMethod != "none" && sc.ClientSecret == "" {
-			return fmt.Errorf(
-				"op.static_clients[%d] (%s): client_secret is required when token_endpoint_auth_method is %s",
-				i, sc.ClientID, authMethod,
 			)
 		}
 	}

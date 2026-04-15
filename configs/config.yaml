@@ -44,12 +44,13 @@ op:
   session_timeout: 600
   cleanup_interval: 3600
   # static_clients:
-  #   # Non-templated: seeded once at startup, available to all tenants
+  #   # Non-templated: scoped to a specific tenant
   #   - client_id: "siros-tenant-foobar"
   #     client_name: "Foobar Inc."
+  #     tenant_id: "foobar"
   #     redirect_uris:
   #       - https://id.siros.org/id/foobar/oidc/cb
-  #     # Public client (no client authentication)
+  #     # Static clients are always public (no client authentication)
   #     token_endpoint_auth_method: "none"
   #
   #   # Templated: ${tenant} is substituted with the requesting tenant at runtime.

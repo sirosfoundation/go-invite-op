@@ -20,7 +20,6 @@ import (
 
 	"github.com/sirosfoundation/go-invite-op/internal/api"
 	"github.com/sirosfoundation/go-invite-op/internal/config"
-	"github.com/sirosfoundation/go-invite-op/internal/domain"
 	"github.com/sirosfoundation/go-invite-op/internal/email"
 	"github.com/sirosfoundation/go-invite-op/internal/health"
 	"github.com/sirosfoundation/go-invite-op/internal/op"
@@ -83,34 +82,12 @@ func main() {
 		logger.Info("Using in-memory storage")
 	}
 
-	// Load static clients from configuration.
-	// Clients without template placeholders are seeded into the store so that
-	// they survive across tenants and are visible to the admin API.
-	// Clients that use ${tenant} are resolved at request time by the provider.
+	// Static clients are resolved at request time by the provider via
+	// ResolveClientForTenant, which handles both tenant scoping and ${tenant}
+	// template expansion. No store seeding is needed.
 	if len(cfg.OP.StaticClients) > 0 {
-		seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer seedCancel()
-		for _, sc := range cfg.OP.StaticClients {
-			if sc.HasTemplates() {
-				logger.Info("Static OIDC client uses templates; will be resolved per-tenant at request time",
-					zap.String("client_id_template", sc.ClientID))
-				continue
-			}
-			client := &domain.OIDCClient{
-				ClientID:                sc.ClientID,
-				ClientSecret:            sc.ClientSecret,
-				ClientName:              sc.ClientName,
-				RedirectURIs:            sc.RedirectURIs,
-				TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
-			}
-			if seedErr := store.Clients().Upsert(seedCtx, client); seedErr != nil {
-				logger.Fatal("Failed to seed static OIDC client",
-					zap.String("client_id", sc.ClientID),
-					zap.Error(seedErr),
-				)
-			}
-			logger.Info("Seeded static OIDC client", zap.String("client_id", sc.ClientID))
-		}
+		logger.Info("Loaded static OIDC client configurations",
+			zap.Int("count", len(cfg.OP.StaticClients)))
 	}
 
 	// Readiness manager

@@ -65,12 +65,14 @@ op:
   static_clients:
     - client_id: "siros-tenant-foobar"
       client_name: "Foobar Inc."
+      tenant_id: "foobar"
       redirect_uris:
         - https://id.siros.org/id/foobar/oidc/cb
       token_endpoint_auth_method: "none"
-    - client_id: "confidential-client"
+    - client_id: "client-${tenant}-wallet"
       redirect_uris:
-        - https://app.example.com/callback
+        - https://id.siros.org/id/${tenant}/oidc/cb
+      token_endpoint_auth_method: "none"
 `), 0644)
 	require.NoError(t, err)
 
@@ -81,12 +83,13 @@ op:
 
 	assert.Equal(t, "siros-tenant-foobar", cfg.OP.StaticClients[0].ClientID)
 	assert.Equal(t, "Foobar Inc.", cfg.OP.StaticClients[0].ClientName)
+	assert.Equal(t, "foobar", cfg.OP.StaticClients[0].TenantID)
 	assert.Equal(t, []string{"https://id.siros.org/id/foobar/oidc/cb"}, cfg.OP.StaticClients[0].RedirectURIs)
 	assert.Equal(t, "none", cfg.OP.StaticClients[0].TokenEndpointAuthMethod)
 
-	assert.Equal(t, "confidential-client", cfg.OP.StaticClients[1].ClientID)
-	assert.Equal(t, []string{"https://app.example.com/callback"}, cfg.OP.StaticClients[1].RedirectURIs)
-	assert.Equal(t, "", cfg.OP.StaticClients[1].TokenEndpointAuthMethod)
+	assert.Equal(t, "client-${tenant}-wallet", cfg.OP.StaticClients[1].ClientID)
+	assert.Equal(t, []string{"https://id.siros.org/id/${tenant}/oidc/cb"}, cfg.OP.StaticClients[1].RedirectURIs)
+	assert.Equal(t, "none", cfg.OP.StaticClients[1].TokenEndpointAuthMethod)
 }
 
 func TestValidateStaticClientMissingClientID(t *testing.T) {
@@ -158,6 +161,7 @@ func TestOPConfigResolveClientForTenant(t *testing.T) {
 		StaticClients: []StaticClientConfig{
 			{
 				ClientID:     "fixed-client",
+				TenantID:     "acme",
 				RedirectURIs: []string{"https://example.com/cb"},
 			},
 			{
@@ -169,10 +173,14 @@ func TestOPConfigResolveClientForTenant(t *testing.T) {
 		},
 	}
 
-	// Non-templated: should match exactly
+	// Non-templated: should match for the correct tenant
 	sc, ok := op.ResolveClientForTenant("acme", "fixed-client")
 	require.True(t, ok)
 	assert.Equal(t, "fixed-client", sc.ClientID)
+
+	// Non-templated: should NOT match for a different tenant
+	_, ok = op.ResolveClientForTenant("beta", "fixed-client")
+	assert.False(t, ok)
 
 	// Templated: should expand and match
 	sc, ok = op.ResolveClientForTenant("acme", "client-acme-wallet")

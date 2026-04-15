@@ -628,7 +628,6 @@ func (p *Provider) resolveClient(ctx context.Context, tenant, clientID string) (
 	if sc, ok := p.cfg.OP.ResolveClientForTenant(tenant, clientID); ok {
 		return &domain.OIDCClient{
 			ClientID:                sc.ClientID,
-			ClientSecret:            sc.ClientSecret,
 			ClientName:              sc.ClientName,
 			RedirectURIs:            sc.RedirectURIs,
 			TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
