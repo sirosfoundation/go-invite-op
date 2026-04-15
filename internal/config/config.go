@@ -132,11 +132,12 @@ type JWTConfig struct {
 
 // SMTPConfig contains email delivery configuration.
 type SMTPConfig struct {
-	Host     string `yaml:"host" envconfig:"HOST"`
-	Port     int    `yaml:"port" envconfig:"PORT"`
-	Username string `yaml:"username" envconfig:"USERNAME"`
-	Password string `yaml:"password" envconfig:"PASSWORD"`
-	From     string `yaml:"from" envconfig:"FROM"`
+	Host         string `yaml:"host" envconfig:"HOST"`
+	Port         int    `yaml:"port" envconfig:"PORT"`
+	Username     string `yaml:"username" envconfig:"USERNAME"`
+	Password     string `yaml:"password" envconfig:"PASSWORD"`
+	PasswordPath string `yaml:"password_path" envconfig:"PASSWORD_PATH"`
+	From         string `yaml:"from" envconfig:"FROM"`
 }
 
 // RateLimitConfig configures rate limiting.
@@ -267,6 +268,14 @@ func Load(configFile string) (*Config, error) {
 			return nil, fmt.Errorf("reading MongoDB password: %w", err)
 		}
 		cfg.Storage.MongoDB.URI = strings.ReplaceAll(cfg.Storage.MongoDB.URI, "${MONGODB_PASSWORD}", password)
+	}
+
+	if cfg.SMTP.PasswordPath != "" {
+		password, err := readSecret(cfg.SMTP.PasswordPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading SMTP password: %w", err)
+		}
+		cfg.SMTP.Password = password
 	}
 
 	if err := cfg.Validate(); err != nil {

@@ -38,6 +38,7 @@ smtp:
   # port: 587
   # username: ""
   # password: ""
+  # password_path: "/run/secrets/smtp-password"
   # from: "noreply@example.com"
 
 op:
