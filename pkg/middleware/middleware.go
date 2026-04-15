@@ -120,6 +120,21 @@ func TenantFromContext(c *gin.Context) string {
 	return ""
 }
 
+// TenantHeaderMiddleware reads the tenant ID from the X-Tenant-ID header
+// and sets it in the gin context. It returns 400 if the header is missing.
+func TenantHeaderMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tenantID := strings.TrimSpace(c.GetHeader("X-Tenant-ID"))
+		if tenantID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "X-Tenant-ID header required"})
+			c.Abort()
+			return
+		}
+		c.Set("tenant_id", tenantID)
+		c.Next()
+	}
+}
+
 // Logger returns a gin middleware that logs requests using zap.
 func Logger(logger *zap.Logger, skipPaths ...string) gin.HandlerFunc {
 	skip := make(map[string]bool, len(skipPaths))
