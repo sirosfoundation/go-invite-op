@@ -127,6 +127,7 @@ type JWTConfig struct {
 	Secret     string `yaml:"secret" envconfig:"SECRET"`
 	SecretPath string `yaml:"secret_path" envconfig:"SECRET_PATH"`
 	Issuer     string `yaml:"issuer" envconfig:"ISSUER"`
+	KeyFile    string `yaml:"key_file" envconfig:"KEY_FILE"`
 }
 
 // SMTPConfig contains email delivery configuration.

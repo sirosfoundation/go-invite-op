@@ -162,7 +162,10 @@ func main() {
 	})
 
 	// OP routes (public, per-tenant)
-	opProvider := op.NewProvider(store, cfg, emailer, logger)
+	opProvider, err := op.NewProvider(store, cfg, emailer, logger)
+	if err != nil {
+		logger.Fatal("Failed to create OP provider", zap.Error(err))
+	}
 	if opRateLimiter != nil {
 		router.Use(func(c *gin.Context) {
 			if !opRateLimiter.Allow(c.ClientIP()) {
