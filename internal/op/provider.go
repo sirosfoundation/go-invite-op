@@ -614,17 +614,9 @@ func (p *Provider) MarshalJWKS() ([]byte, error) {
 }
 
 // resolveClient returns the OIDC client for the given tenant and clientID.
-// It first checks the store; if not found, it falls back to expanding any
-// static client template entries in the configuration whose client_id matches
-// after substituting ${tenant} with the provided tenant string.
+// It first checks static client configuration (cheap in-memory expansion);
+// if no match, it falls back to the store (dynamic registration).
 func (p *Provider) resolveClient(ctx context.Context, tenant, clientID string) (*domain.OIDCClient, error) {
-	client, err := p.store.Clients().GetByID(ctx, clientID)
-	if err == nil {
-		return client, nil
-	}
-	if !errors.Is(err, storage.ErrNotFound) {
-		return nil, fmt.Errorf("looking up client: %w", err)
-	}
 	if sc, ok := p.cfg.OP.ResolveClientForTenant(tenant, clientID); ok {
 		return &domain.OIDCClient{
 			ClientID:                sc.ClientID,
@@ -632,6 +624,13 @@ func (p *Provider) resolveClient(ctx context.Context, tenant, clientID string) (
 			RedirectURIs:            sc.RedirectURIs,
 			TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
 		}, nil
+	}
+	client, err := p.store.Clients().GetByID(ctx, clientID)
+	if err == nil {
+		return client, nil
+	}
+	if !errors.Is(err, storage.ErrNotFound) {
+		return nil, fmt.Errorf("looking up client: %w", err)
 	}
 	return nil, fmt.Errorf("client not found: %s", clientID)
 }
