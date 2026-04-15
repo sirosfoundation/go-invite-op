@@ -251,6 +251,7 @@ func main() {
 
 	adminGroup := adminRouter.Group("/admin")
 	adminGroup.Use(middleware.AdminAuthMiddleware(adminToken, logger))
+	adminGroup.Use(middleware.TenantHeaderMiddleware())
 	handlers.RegisterRoutes(adminGroup)
 
 	adminAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.AdminPort)
