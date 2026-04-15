@@ -50,24 +50,32 @@ func (i *Invite) IsDomain() bool {
 
 // OIDCClient represents a dynamically registered OIDC client.
 type OIDCClient struct {
-	ClientID     string    `json:"client_id" bson:"_id"`
-	ClientSecret string    `json:"client_secret,omitempty" bson:"client_secret"`
-	RedirectURIs []string  `json:"redirect_uris" bson:"redirect_uris"`
-	ClientName   string    `json:"client_name,omitempty" bson:"client_name"`
-	CreatedAt    time.Time `json:"created_at" bson:"created_at"`
+	ClientID                string    `json:"client_id" bson:"_id"`
+	ClientSecret            string    `json:"client_secret,omitempty" bson:"client_secret"`
+	RedirectURIs            []string  `json:"redirect_uris" bson:"redirect_uris"`
+	ClientName              string    `json:"client_name,omitempty" bson:"client_name"`
+	TokenEndpointAuthMethod string    `json:"token_endpoint_auth_method" bson:"token_endpoint_auth_method"`
+	CreatedAt               time.Time `json:"created_at" bson:"created_at"`
+}
+
+// IsPublic returns true if this client uses no client authentication (PKCE-only).
+func (c *OIDCClient) IsPublic() bool {
+	return c.TokenEndpointAuthMethod == "none"
 }
 
 // PendingAuth represents an in-progress OIDC authentication session.
 type PendingAuth struct {
-	ID          string    `json:"id"`
-	TenantID    TenantID  `json:"tenant_id"`
-	ClientID    string    `json:"client_id"`
-	RedirectURI string    `json:"redirect_uri"`
-	State       string    `json:"state"`
-	Nonce       string    `json:"nonce"`
-	Email       string    `json:"email"`
-	Code        string    `json:"code"`
-	InviteID    string    `json:"invite_id"`
-	Stage       string    `json:"stage"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID                  string    `json:"id" bson:"_id"`
+	TenantID            TenantID  `json:"tenant_id" bson:"tenant_id"`
+	ClientID            string    `json:"client_id" bson:"client_id"`
+	RedirectURI         string    `json:"redirect_uri" bson:"redirect_uri"`
+	State               string    `json:"state" bson:"state"`
+	Nonce               string    `json:"nonce" bson:"nonce"`
+	Email               string    `json:"email" bson:"email"`
+	Code                string    `json:"code" bson:"code"`
+	InviteID            string    `json:"invite_id" bson:"invite_id"`
+	Stage               string    `json:"stage" bson:"stage"`
+	CodeChallenge       string    `json:"code_challenge,omitempty" bson:"code_challenge,omitempty"`
+	CodeChallengeMethod string    `json:"code_challenge_method,omitempty" bson:"code_challenge_method,omitempty"`
+	CreatedAt           time.Time `json:"created_at" bson:"created_at"`
 }
