@@ -57,6 +57,148 @@ jwt:
 	assert.Equal(t, "my-secret", cfg.JWT.Secret)
 }
 
+func TestLoadStaticClients(t *testing.T) {
+	dir := t.TempDir()
+	yamlFile := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(yamlFile, []byte(`
+op:
+  static_clients:
+    - client_id: "siros-tenant-foobar"
+      client_name: "Foobar Inc."
+      tenant_id: "foobar"
+      redirect_uris:
+        - https://id.siros.org/id/foobar/oidc/cb
+      token_endpoint_auth_method: "none"
+    - client_id: "client-${tenant}-wallet"
+      redirect_uris:
+        - https://id.siros.org/id/${tenant}/oidc/cb
+      token_endpoint_auth_method: "none"
+`), 0644)
+	require.NoError(t, err)
+
+	cfg, err := Load(yamlFile)
+	require.NoError(t, err)
+
+	require.Len(t, cfg.OP.StaticClients, 2)
+
+	assert.Equal(t, "siros-tenant-foobar", cfg.OP.StaticClients[0].ClientID)
+	assert.Equal(t, "Foobar Inc.", cfg.OP.StaticClients[0].ClientName)
+	assert.Equal(t, "foobar", cfg.OP.StaticClients[0].TenantID)
+	assert.Equal(t, []string{"https://id.siros.org/id/foobar/oidc/cb"}, cfg.OP.StaticClients[0].RedirectURIs)
+	assert.Equal(t, "none", cfg.OP.StaticClients[0].TokenEndpointAuthMethod)
+
+	assert.Equal(t, "client-${tenant}-wallet", cfg.OP.StaticClients[1].ClientID)
+	assert.Equal(t, []string{"https://id.siros.org/id/${tenant}/oidc/cb"}, cfg.OP.StaticClients[1].RedirectURIs)
+	assert.Equal(t, "none", cfg.OP.StaticClients[1].TokenEndpointAuthMethod)
+}
+
+func TestValidateStaticClientMissingClientID(t *testing.T) {
+	cfg := &Config{
+		Server:  ServerConfig{Port: 8080, AdminPort: 8081},
+		Storage: StorageConfig{Type: "memory"},
+		OP: OPConfig{
+			StaticClients: []StaticClientConfig{
+				{RedirectURIs: []string{"https://example.com/cb"}},
+			},
+		},
+	}
+	assert.Error(t, cfg.Validate())
+}
+
+func TestValidateStaticClientMissingRedirectURIs(t *testing.T) {
+	cfg := &Config{
+		Server:  ServerConfig{Port: 8080, AdminPort: 8081},
+		Storage: StorageConfig{Type: "memory"},
+		OP: OPConfig{
+			StaticClients: []StaticClientConfig{
+				{ClientID: "my-client"},
+			},
+		},
+	}
+	assert.Error(t, cfg.Validate())
+}
+
+func TestStaticClientHasTemplates(t *testing.T) {
+	plain := StaticClientConfig{
+		ClientID:     "my-client",
+		RedirectURIs: []string{"https://example.com/cb"},
+	}
+	assert.False(t, plain.HasTemplates())
+
+	withTenantID := StaticClientConfig{
+		ClientID:     "client-${tenant}-foo",
+		RedirectURIs: []string{"https://example.com/cb"},
+	}
+	assert.True(t, withTenantID.HasTemplates())
+
+	withTenantURI := StaticClientConfig{
+		ClientID:     "my-client",
+		RedirectURIs: []string{"https://id.siros.org/id/${tenant}/oidc/cb"},
+	}
+	assert.True(t, withTenantURI.HasTemplates())
+}
+
+func TestStaticClientExpandForTenant(t *testing.T) {
+	sc := StaticClientConfig{
+		ClientID:                "client-${tenant}-wallet",
+		ClientName:              "Wallet (${tenant})",
+		RedirectURIs:            []string{"https://id.siros.org/id/${tenant}/oidc/cb"},
+		TokenEndpointAuthMethod: "none",
+	}
+
+	expanded := sc.ExpandForTenant("acme")
+	assert.Equal(t, "client-acme-wallet", expanded.ClientID)
+	assert.Equal(t, "Wallet (acme)", expanded.ClientName)
+	assert.Equal(t, []string{"https://id.siros.org/id/acme/oidc/cb"}, expanded.RedirectURIs)
+	assert.Equal(t, "none", expanded.TokenEndpointAuthMethod)
+
+	// Original must not be modified
+	assert.Equal(t, "client-${tenant}-wallet", sc.ClientID)
+}
+
+func TestOPConfigResolveClientForTenant(t *testing.T) {
+	op := OPConfig{
+		StaticClients: []StaticClientConfig{
+			{
+				ClientID:     "fixed-client",
+				TenantID:     "acme",
+				RedirectURIs: []string{"https://example.com/cb"},
+			},
+			{
+				ClientID:                "client-${tenant}-wallet",
+				ClientName:              "Wallet",
+				RedirectURIs:            []string{"https://id.siros.org/id/${tenant}/oidc/cb"},
+				TokenEndpointAuthMethod: "none",
+			},
+		},
+	}
+
+	// Non-templated: should match for the correct tenant
+	sc, ok := op.ResolveClientForTenant("acme", "fixed-client")
+	require.True(t, ok)
+	assert.Equal(t, "fixed-client", sc.ClientID)
+
+	// Non-templated: should NOT match for a different tenant
+	_, ok = op.ResolveClientForTenant("beta", "fixed-client")
+	assert.False(t, ok)
+
+	// Templated: should expand and match
+	sc, ok = op.ResolveClientForTenant("acme", "client-acme-wallet")
+	require.True(t, ok)
+	assert.Equal(t, "client-acme-wallet", sc.ClientID)
+	assert.Equal(t, []string{"https://id.siros.org/id/acme/oidc/cb"}, sc.RedirectURIs)
+
+	// Same template for a different tenant
+	sc, ok = op.ResolveClientForTenant("beta", "client-beta-wallet")
+	require.True(t, ok)
+	assert.Equal(t, "client-beta-wallet", sc.ClientID)
+	assert.Equal(t, []string{"https://id.siros.org/id/beta/oidc/cb"}, sc.RedirectURIs)
+
+	// Non-matching client_id
+	_, ok = op.ResolveClientForTenant("acme", "unknown-client")
+	assert.False(t, ok)
+}
+
 func TestValidateInvalidStorageType(t *testing.T) {
 	cfg := &Config{
 		Server:  ServerConfig{Port: 8080, AdminPort: 8081},

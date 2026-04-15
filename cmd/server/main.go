@@ -82,6 +82,14 @@ func main() {
 		logger.Info("Using in-memory storage")
 	}
 
+	// Static clients are resolved at request time by the provider via
+	// ResolveClientForTenant, which handles both tenant scoping and ${tenant}
+	// template expansion. No store seeding is needed.
+	if len(cfg.OP.StaticClients) > 0 {
+		logger.Info("Loaded static OIDC client configurations",
+			zap.Int("count", len(cfg.OP.StaticClients)))
+	}
+
 	// Readiness manager
 	readiness := health.NewReadinessManager(
 		health.WithCacheTTL(2*time.Second),

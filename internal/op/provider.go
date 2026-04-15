@@ -1,6 +1,7 @@
 package op
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -314,7 +315,7 @@ func (p *Provider) AuthorizeGet(c *gin.Context) {
 		return
 	}
 
-	client, err := p.store.Clients().GetByID(c.Request.Context(), clientID)
+	client, err := p.resolveClient(c.Request.Context(), tenant, clientID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_client"})
 		return
@@ -481,7 +482,7 @@ func (p *Provider) Token(c *gin.Context) {
 	redirectURI := c.PostForm("redirect_uri")
 	tenant := c.Param("tenant")
 
-	client, err := p.store.Clients().GetByID(c.Request.Context(), clientID)
+	client, err := p.resolveClient(c.Request.Context(), tenant, clientID)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
 		return
@@ -495,8 +496,9 @@ func (p *Provider) Token(c *gin.Context) {
 			return
 		}
 	} else {
-		// Confidential clients authenticate via client_secret
-		if clientSecret != client.ClientSecret {
+		// Confidential clients authenticate via client_secret (constant-time)
+		if client.ClientSecret == "" || clientSecret == "" ||
+			subtle.ConstantTimeCompare([]byte(client.ClientSecret), []byte(clientSecret)) != 1 {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_client"})
 			return
 		}
@@ -609,6 +611,28 @@ func (p *Provider) MarshalJWKS() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(map[string]interface{}{"keys": []interface{}{jwk}})
+}
+
+// resolveClient returns the OIDC client for the given tenant and clientID.
+// It first checks static client configuration (cheap in-memory expansion);
+// if no match, it falls back to the store (dynamic registration).
+func (p *Provider) resolveClient(ctx context.Context, tenant, clientID string) (*domain.OIDCClient, error) {
+	if sc, ok := p.cfg.OP.ResolveClientForTenant(tenant, clientID); ok {
+		return &domain.OIDCClient{
+			ClientID:                sc.ClientID,
+			ClientName:              sc.ClientName,
+			RedirectURIs:            sc.RedirectURIs,
+			TokenEndpointAuthMethod: sc.TokenEndpointAuthMethod,
+		}, nil
+	}
+	client, err := p.store.Clients().GetByID(ctx, clientID)
+	if err == nil {
+		return client, nil
+	}
+	if !errors.Is(err, storage.ErrNotFound) {
+		return nil, fmt.Errorf("looking up client: %w", err)
+	}
+	return nil, fmt.Errorf("client not found: %s", clientID)
 }
 
 func generateRandom(n int) (string, error) {

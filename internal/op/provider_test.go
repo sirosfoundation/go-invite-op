@@ -593,3 +593,276 @@ func TestTokenInvalidClient(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
+
+func TestPublicClientTokenFlow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logger := zap.NewNop()
+	store := memory.NewStore()
+	cfg := testConfig()
+	emailer := email.NewLogSender(logger)
+	provider, err := NewProvider(store, cfg, emailer, logger)
+	require.NoError(t, err)
+
+	router := gin.New()
+	provider.RegisterRoutes(router)
+
+	// Seed a public client (no client_secret)
+	ctx := t.Context()
+	client := &domain.OIDCClient{
+		ClientID:                "public-client",
+		ClientName:              "Public Client",
+		RedirectURIs:            []string{"https://app.example.com/cb"},
+		TokenEndpointAuthMethod: "none",
+	}
+	require.NoError(t, store.Clients().Upsert(ctx, client))
+
+	// Create an invite
+	invite := &domain.Invite{
+		ID:        "invite-pub-1",
+		TenantID:  "test-tenant",
+		Email:     "user@example.com",
+		Code:      "PUBCODE123",
+		MaxUses:   5,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	require.NoError(t, store.Invites().Create(ctx, invite))
+
+	// PKCE
+	codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+	pkceH := sha256.Sum256([]byte(codeVerifier))
+	codeChallenge := base64.RawURLEncoding.EncodeToString(pkceH[:])
+
+	// Start authorization
+	authURL := "/test-tenant/authorize?response_type=code&client_id=public-client" +
+		"&redirect_uri=" + url.QueryEscape("https://app.example.com/cb") +
+		"&state=s&nonce=n" +
+		"&code_challenge=" + codeChallenge + "&code_challenge_method=S256"
+	authW := httptest.NewRecorder()
+	authReq, _ := http.NewRequest("GET", authURL, nil)
+	router.ServeHTTP(authW, authReq)
+	require.Equal(t, http.StatusOK, authW.Code)
+
+	bodyStr := authW.Body.String()
+	sessionStart := strings.Index(bodyStr, `value="`) + len(`value="`)
+	sessionEnd := strings.Index(bodyStr[sessionStart:], `"`)
+	sessionID := bodyStr[sessionStart : sessionStart+sessionEnd]
+
+	// Submit email
+	emailForm := url.Values{"session_id": {sessionID}, "email": {"user@example.com"}}
+	emailW := httptest.NewRecorder()
+	emailReq, _ := http.NewRequest("POST", "/test-tenant/authorize", strings.NewReader(emailForm.Encode()))
+	emailReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(emailW, emailReq)
+	require.Equal(t, http.StatusOK, emailW.Code)
+
+	// Submit code
+	codeForm := url.Values{"session_id": {sessionID}, "code": {"PUBCODE123"}}
+	codeW := httptest.NewRecorder()
+	codeReq, _ := http.NewRequest("POST", "/test-tenant/authorize", strings.NewReader(codeForm.Encode()))
+	codeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(codeW, codeReq)
+	require.Equal(t, http.StatusFound, codeW.Code)
+
+	location := codeW.Header().Get("Location")
+	redirectURL, err := url.Parse(location)
+	require.NoError(t, err)
+	authCode := redirectURL.Query().Get("code")
+	require.NotEmpty(t, authCode)
+
+	// Token exchange — public client with PKCE verifier
+	tokenForm := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {authCode},
+		"client_id":     {"public-client"},
+		"redirect_uri":  {"https://app.example.com/cb"},
+		"code_verifier": {codeVerifier},
+	}
+	tokenW := httptest.NewRecorder()
+	tokenReq, _ := http.NewRequest("POST", "/test-tenant/token", strings.NewReader(tokenForm.Encode()))
+	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(tokenW, tokenReq)
+	require.Equal(t, http.StatusOK, tokenW.Code)
+
+	var tokenResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(tokenW.Body.Bytes(), &tokenResp))
+	assert.NotEmpty(t, tokenResp["id_token"])
+}
+
+func TestConfidentialClientWrongSecretRejected(t *testing.T) {
+	_, router := setupProvider(t)
+
+	// Register a confidential client (has a secret)
+	regBody := `{"redirect_uris": ["http://localhost/cb"]}`
+	regReq, _ := http.NewRequest("POST", "/test-tenant/register", strings.NewReader(regBody))
+	regReq.Header.Set("Content-Type", "application/json")
+	regW := httptest.NewRecorder()
+	router.ServeHTTP(regW, regReq)
+	require.Equal(t, http.StatusCreated, regW.Code)
+
+	var regResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(regW.Body.Bytes(), &regResp))
+	clientID := regResp["client_id"].(string)
+
+	// Attempt token exchange with wrong secret — must be rejected
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {"somecode"},
+		"client_id":     {clientID},
+		"client_secret": {"wrong-secret"},
+	}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/test-tenant/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func testConfigWithStaticClients(staticClients []config.StaticClientConfig) *config.Config {
+	cfg := testConfig()
+	cfg.OP.StaticClients = staticClients
+	return cfg
+}
+
+func TestTemplatedClientAuthFlow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logger := zap.NewNop()
+	store := memory.NewStore()
+	cfg := testConfigWithStaticClients([]config.StaticClientConfig{
+		{
+			ClientID:                "client-${tenant}-wallet",
+			ClientName:              "Wallet (${tenant})",
+			RedirectURIs:            []string{"https://id.siros.org/id/${tenant}/oidc/cb"},
+			TokenEndpointAuthMethod: "none",
+		},
+	})
+	emailer := email.NewLogSender(logger)
+	provider, err := NewProvider(store, cfg, emailer, logger)
+	require.NoError(t, err)
+
+	router := gin.New()
+	provider.RegisterRoutes(router)
+
+	// Templated client is NOT seeded in the store — it's resolved at request time.
+	ctx := t.Context()
+
+	// Create an invite for the tenant "acme"
+	invite := &domain.Invite{
+		ID:        "invite-tmpl-1",
+		TenantID:  "acme",
+		Email:     "user@acme.com",
+		Code:      "TMPLCODE1",
+		MaxUses:   5,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	require.NoError(t, store.Invites().Create(ctx, invite))
+
+	// The expanded client_id for tenant "acme"
+	expandedClientID := "client-acme-wallet"
+	redirectURI := "https://id.siros.org/id/acme/oidc/cb"
+
+	// PKCE
+	codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+	pkceH := sha256.Sum256([]byte(codeVerifier))
+	codeChallenge := base64.RawURLEncoding.EncodeToString(pkceH[:])
+
+	// Start authorization
+	authURL := "/acme/authorize?response_type=code&client_id=" + expandedClientID +
+		"&redirect_uri=" + url.QueryEscape(redirectURI) + "&state=s&nonce=n" +
+		"&code_challenge=" + codeChallenge + "&code_challenge_method=S256"
+	authW := httptest.NewRecorder()
+	authReq, _ := http.NewRequest("GET", authURL, nil)
+	router.ServeHTTP(authW, authReq)
+	require.Equal(t, http.StatusOK, authW.Code)
+
+	bodyStr := authW.Body.String()
+	sessionStart := strings.Index(bodyStr, `value="`) + len(`value="`)
+	sessionEnd := strings.Index(bodyStr[sessionStart:], `"`)
+	sessionID := bodyStr[sessionStart : sessionStart+sessionEnd]
+
+	// Submit email
+	emailForm := url.Values{"session_id": {sessionID}, "email": {"user@acme.com"}}
+	emailW := httptest.NewRecorder()
+	emailReq, _ := http.NewRequest("POST", "/acme/authorize", strings.NewReader(emailForm.Encode()))
+	emailReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(emailW, emailReq)
+	require.Equal(t, http.StatusOK, emailW.Code)
+
+	// Submit code
+	codeForm := url.Values{"session_id": {sessionID}, "code": {"TMPLCODE1"}}
+	codeW := httptest.NewRecorder()
+	codeReq, _ := http.NewRequest("POST", "/acme/authorize", strings.NewReader(codeForm.Encode()))
+	codeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(codeW, codeReq)
+	require.Equal(t, http.StatusFound, codeW.Code)
+
+	location := codeW.Header().Get("Location")
+	parsedURL, err := url.Parse(location)
+	require.NoError(t, err)
+	authCode := parsedURL.Query().Get("code")
+	require.NotEmpty(t, authCode)
+
+	// Token exchange — public client with PKCE verifier
+	tokenForm := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {authCode},
+		"client_id":     {expandedClientID},
+		"redirect_uri":  {redirectURI},
+		"code_verifier": {codeVerifier},
+	}
+	tokenW := httptest.NewRecorder()
+	tokenReq, _ := http.NewRequest("POST", "/acme/token", strings.NewReader(tokenForm.Encode()))
+	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(tokenW, tokenReq)
+	require.Equal(t, http.StatusOK, tokenW.Code)
+
+	var tokenResp map[string]interface{}
+	require.NoError(t, json.Unmarshal(tokenW.Body.Bytes(), &tokenResp))
+	assert.NotEmpty(t, tokenResp["id_token"])
+}
+
+func TestTemplatedClientDifferentTenants(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := memory.NewStore()
+	cfg := testConfigWithStaticClients([]config.StaticClientConfig{
+		{
+			ClientID:                "client-${tenant}-wallet",
+			RedirectURIs:            []string{"https://id.siros.org/id/${tenant}/oidc/cb"},
+			TokenEndpointAuthMethod: "none",
+		},
+	})
+	provider, provErr := NewProvider(store, cfg, email.NewLogSender(zap.NewNop()), zap.NewNop())
+	require.NoError(t, provErr)
+
+	router := gin.New()
+	provider.RegisterRoutes(router)
+
+	// PKCE challenge (needed for public clients)
+	codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+	pkceH := sha256.Sum256([]byte(codeVerifier))
+	codeChallenge := base64.RawURLEncoding.EncodeToString(pkceH[:])
+
+	// client-acme-wallet → valid for tenant "acme"
+	acmeURL := "/acme/authorize?response_type=code&client_id=client-acme-wallet" +
+		"&redirect_uri=" + url.QueryEscape("https://id.siros.org/id/acme/oidc/cb") +
+		"&code_challenge=" + codeChallenge + "&code_challenge_method=S256"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", acmeURL, nil))
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// client-beta-wallet → valid for tenant "beta"
+	betaURL := "/beta/authorize?response_type=code&client_id=client-beta-wallet" +
+		"&redirect_uri=" + url.QueryEscape("https://id.siros.org/id/beta/oidc/cb") +
+		"&code_challenge=" + codeChallenge + "&code_challenge_method=S256"
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", betaURL, nil))
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// client-acme-wallet does NOT match the template for tenant "beta"
+	// (template expands to client-beta-wallet for tenant "beta")
+	crossURL := "/beta/authorize?response_type=code&client_id=client-acme-wallet" +
+		"&redirect_uri=" + url.QueryEscape("https://id.siros.org/id/acme/oidc/cb") +
+		"&code_challenge=" + codeChallenge + "&code_challenge_method=S256"
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", crossURL, nil))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

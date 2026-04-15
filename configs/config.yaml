@@ -44,3 +44,20 @@ smtp:
 op:
   session_timeout: 600
   cleanup_interval: 3600
+  # static_clients:
+  #   # Non-templated: scoped to a specific tenant
+  #   - client_id: "siros-tenant-foobar"
+  #     client_name: "Foobar Inc."
+  #     tenant_id: "foobar"
+  #     redirect_uris:
+  #       - https://id.siros.org/id/foobar/oidc/cb
+  #     # Static clients are always public (no client authentication)
+  #     token_endpoint_auth_method: "none"
+  #
+  #   # Templated: ${tenant} is substituted with the requesting tenant at runtime.
+  #   # This allows one config entry to serve all tenants automatically.
+  #   - client_id: "client-${tenant}-wallet"
+  #     client_name: "Wallet (${tenant})"
+  #     redirect_uris:
+  #       - https://id.siros.org/id/${tenant}/oidc/cb
+  #     token_endpoint_auth_method: "none"

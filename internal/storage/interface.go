@@ -41,6 +41,7 @@ type InviteStore interface {
 type ClientStore interface {
 	Create(ctx context.Context, client *domain.OIDCClient) error
 	GetByID(ctx context.Context, clientID string) (*domain.OIDCClient, error)
+	Upsert(ctx context.Context, client *domain.OIDCClient) error
 }
 
 // SessionStore defines the interface for pending auth session storage.
