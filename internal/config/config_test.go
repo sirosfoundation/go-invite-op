@@ -304,6 +304,28 @@ func TestMongoDBPasswordFromFile(t *testing.T) {
 storage:
   type: "mongodb"
   mongodb:
+    uri: "mongodb://user:%PASSWORD%@dbhost:27017"
+    password_path: "`+pwFile+`"
+`), 0644)
+	require.NoError(t, err)
+
+	cfg, err := Load(yamlFile)
+	require.NoError(t, err)
+	assert.Equal(t, "mongodb://user:s3cret@dbhost:27017", cfg.Storage.MongoDB.URI)
+}
+
+func TestMongoDBPasswordLegacyPlaceholder(t *testing.T) {
+	dir := t.TempDir()
+
+	pwFile := filepath.Join(dir, "mongo-pw")
+	err := os.WriteFile(pwFile, []byte("s3cret\n"), 0600)
+	require.NoError(t, err)
+
+	yamlFile := filepath.Join(dir, "config.yaml")
+	err = os.WriteFile(yamlFile, []byte(`
+storage:
+  type: "mongodb"
+  mongodb:
     uri: "mongodb://user:${MONGODB_PASSWORD}@dbhost:27017"
     password_path: "`+pwFile+`"
 `), 0644)
@@ -312,6 +334,28 @@ storage:
 	cfg, err := Load(yamlFile)
 	require.NoError(t, err)
 	assert.Equal(t, "mongodb://user:s3cret@dbhost:27017", cfg.Storage.MongoDB.URI)
+}
+
+func TestMongoDBPasswordMissingPlaceholder(t *testing.T) {
+	dir := t.TempDir()
+
+	pwFile := filepath.Join(dir, "mongo-pw")
+	err := os.WriteFile(pwFile, []byte("s3cret\n"), 0600)
+	require.NoError(t, err)
+
+	yamlFile := filepath.Join(dir, "config.yaml")
+	err = os.WriteFile(yamlFile, []byte(`
+storage:
+  type: "mongodb"
+  mongodb:
+    uri: "mongodb://dbhost:27017"
+    password_path: "`+pwFile+`"
+`), 0644)
+	require.NoError(t, err)
+
+	_, err = Load(yamlFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "%PASSWORD%")
 }
 
 func TestSMTPPasswordFromFile(t *testing.T) {

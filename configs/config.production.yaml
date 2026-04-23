@@ -27,7 +27,9 @@ storage:
     uri: "mongodb://localhost:27017"
     database: "invite_op"
     timeout: 10
-    # password_path: "/run/secrets/mongodb-password"
+    # To inject a password from a file, use %PASSWORD% in the URI:
+    #   uri: "mongodb://appuser:%PASSWORD%@dbhost:27017"
+    #   password_path: "/run/secrets/mongodb-password"
     tls_enabled: true
     ca_path: "/etc/tls/mongo-ca.crt"
     # cert_path: "/etc/tls/mongo-client.crt"
