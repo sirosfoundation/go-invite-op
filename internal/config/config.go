@@ -267,7 +267,7 @@ func Load(configFile string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading MongoDB password: %w", err)
 		}
-		cfg.Storage.MongoDB.URI = strings.ReplaceAll(cfg.Storage.MongoDB.URI, "${MONGODB_PASSWORD}", password)
+		cfg.Storage.MongoDB.URI = strings.Replace(cfg.Storage.MongoDB.URI, "%PASSWORD%", password, 1)
 	}
 
 	if cfg.SMTP.PasswordPath != "" {

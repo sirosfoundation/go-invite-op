@@ -304,7 +304,7 @@ func TestMongoDBPasswordFromFile(t *testing.T) {
 storage:
   type: "mongodb"
   mongodb:
-    uri: "mongodb://user:${MONGODB_PASSWORD}@dbhost:27017"
+    uri: "mongodb://user:%PASSWORD%@dbhost:27017"
     password_path: "`+pwFile+`"
 `), 0644)
 	require.NoError(t, err)
