@@ -267,7 +267,16 @@ func Load(configFile string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading MongoDB password: %w", err)
 		}
-		cfg.Storage.MongoDB.URI = strings.Replace(cfg.Storage.MongoDB.URI, "%PASSWORD%", password, 1)
+		uri := cfg.Storage.MongoDB.URI
+		// Support both %PASSWORD% (preferred) and legacy ${MONGODB_PASSWORD}
+		switch {
+		case strings.Contains(uri, "%PASSWORD%"):
+			cfg.Storage.MongoDB.URI = strings.ReplaceAll(uri, "%PASSWORD%", password)
+		case strings.Contains(uri, "${MONGODB_PASSWORD}"):
+			cfg.Storage.MongoDB.URI = strings.ReplaceAll(uri, "${MONGODB_PASSWORD}", password)
+		default:
+			return nil, fmt.Errorf("storage.mongodb.password_path is set but URI contains no %%PASSWORD%% placeholder")
+		}
 	}
 
 	if cfg.SMTP.PasswordPath != "" {
