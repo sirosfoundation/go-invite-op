@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
+	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -643,28 +644,14 @@ func generateRandom(n int) (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-var emailFormTmpl = template.Must(template.New("email").Parse(`<!DOCTYPE html>
-<html><head><title>Sign In</title></head><body>
-<h2>Enter your email address</h2>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<form method="POST">
-<input type="hidden" name="session_id" value="{{.SessionID}}">
-<label>Email: <input type="email" name="email" required></label><br><br>
-<button type="submit">Continue</button>
-</form>
-</body></html>`))
+//go:embed templates/email_form.html
+var emailFormHTML string
 
-var codeFormTmpl = template.Must(template.New("code").Parse(`<!DOCTYPE html>
-<html><head><title>Verify Code</title></head><body>
-<h2>Enter your invite code</h2>
-<p>A code has been sent to {{.Email}}</p>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<form method="POST">
-<input type="hidden" name="session_id" value="{{.SessionID}}">
-<label>Code: <input type="text" name="code" required></label><br><br>
-<button type="submit">Verify</button>
-</form>
-</body></html>`))
+//go:embed templates/code_form.html
+var codeFormHTML string
+
+var emailFormTmpl = template.Must(template.New("email").Parse(emailFormHTML))
+var codeFormTmpl = template.Must(template.New("code").Parse(codeFormHTML))
 
 func (p *Provider) renderEmailForm(c *gin.Context, sessionID, errMsg string) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
