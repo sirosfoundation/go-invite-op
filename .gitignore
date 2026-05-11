@@ -37,4 +37,5 @@ Thumbs.db
 
 # Frontend
 node_modules/
-dist/
+dist/*
+!dist/.gitkeep
