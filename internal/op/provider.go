@@ -648,6 +648,7 @@ func (p *Provider) renderEmailForm(c *gin.Context, sessionID, errMsg string) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
 	data := web.IndexTemplateData{
+		Title:     "Enter Your Email",
 		SessionID: sessionID,
 		Error:     errMsg,
 	}
@@ -660,6 +661,7 @@ func (p *Provider) renderCodeForm(c *gin.Context, sessionID, emailAddr, errMsg s
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
 	data := web.IndexTemplateData{
+		Title:     "Enter Invite Code",
 		SessionID: sessionID,
 		Email:     emailAddr,
 		Error:     errMsg,
