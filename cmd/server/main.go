@@ -27,6 +27,7 @@ import (
 	"github.com/sirosfoundation/go-invite-op/internal/storage/memory"
 	"github.com/sirosfoundation/go-invite-op/internal/storage/mongodb"
 	"github.com/sirosfoundation/go-invite-op/pkg/middleware"
+	"github.com/sirosfoundation/go-invite-op/web"
 )
 
 var (
@@ -168,6 +169,9 @@ func main() {
 		}
 		c.JSON(http.StatusOK, status)
 	})
+
+	// Static assets
+	router.StaticFS("/static", http.FS(web.GetAssetFS()))
 
 	// OP routes (public, per-tenant)
 	opProvider, err := op.NewProvider(store, cfg, emailer, logger)
