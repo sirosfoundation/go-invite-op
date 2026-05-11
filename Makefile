@@ -1,11 +1,15 @@
 # go-invite-op
 
-.PHONY: help build run test test-coverage lint fmt vet tidy tools clean docker-build docker-run
+.PHONY: help build run test test-coverage lint fmt vet tidy tools clean docker-build docker-run build-web install-web
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build: ## Build the server binary
+build-web: install-web ## Build web assets (CSS/JS)
+	@echo "Building web assets..."
+	@pnpm build
+
+build: build-web ## Build the server binary
 	@echo "Building server..."
 	@go build -o bin/server cmd/server/main.go
 
@@ -42,17 +46,22 @@ tidy: ## Tidy go.mod/go.sum
 
 tools: ## Install development tools
 	@echo "Installing tools..."
-	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.0
+	@go install github.com/golangci/golangci-lint@v2.10.0
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-@echo "Cleaning..."
-@rm -rf bin/
-@rm -f coverage.out coverage.html
+clean: ## Clean build artifacts
+	@echo "Cleaning..."
+	@rm -rf bin/ web/dist/
+	@rm -f coverage.out coverage.html
 
 docker-build: ## Build Docker image
-@echo "Building Docker image..."
-@docker build -t go-invite-op:latest .
+	@echo "Building Docker image..."
+	@docker build -t go-invite-op:latest .
 
 docker-run: docker-build ## Build and run Docker container
-@echo "Running Docker container..."
-@docker run -p 8080:8080 -p 8081:8081 --rm go-invite-op:latest
+	@echo "Running Docker container..."
+	@docker run -p 8080:8080 -p 8081:8081 --rm go-invite-op:latest
+
+install-web: ## Install web dependencies
+	@echo "Installing web dependencies..."
+	@pnpm install --frozen-lockfile

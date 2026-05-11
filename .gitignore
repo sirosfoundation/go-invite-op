@@ -34,3 +34,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+
+# Frontend
+node_modules/
+web/dist/*
+web/!dist/.gitkeep

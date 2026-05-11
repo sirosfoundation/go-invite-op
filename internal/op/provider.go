@@ -17,7 +17,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"html/template"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -34,6 +33,7 @@ import (
 	"github.com/sirosfoundation/go-invite-op/internal/domain"
 	"github.com/sirosfoundation/go-invite-op/internal/email"
 	"github.com/sirosfoundation/go-invite-op/internal/storage"
+	"github.com/sirosfoundation/go-invite-op/web"
 )
 
 // Provider implements the OpenID Provider endpoints.
@@ -644,22 +644,15 @@ func generateRandom(n int) (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-//go:embed templates/email_form.html
-var emailFormHTML string
-
-//go:embed templates/code_form.html
-var codeFormHTML string
-
-var emailFormTmpl = template.Must(template.New("email").Parse(emailFormHTML))
-var codeFormTmpl = template.Must(template.New("code").Parse(codeFormHTML))
-
 func (p *Provider) renderEmailForm(c *gin.Context, sessionID, errMsg string) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
-	if err := emailFormTmpl.Execute(c.Writer, map[string]string{
-		"SessionID": sessionID,
-		"Error":     errMsg,
-	}); err != nil {
+	data := web.IndexTemplateData{
+		Title:     "Enter Your Email",
+		SessionID: sessionID,
+		Error:     errMsg,
+	}
+	if err := web.ExecuteIndexTemplate(c.Writer, data); err != nil {
 		p.logger.Error("Failed to render email form", zap.Error(err))
 	}
 }
@@ -667,11 +660,13 @@ func (p *Provider) renderEmailForm(c *gin.Context, sessionID, errMsg string) {
 func (p *Provider) renderCodeForm(c *gin.Context, sessionID, emailAddr, errMsg string) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.Status(http.StatusOK)
-	if err := codeFormTmpl.Execute(c.Writer, map[string]string{
-		"SessionID": sessionID,
-		"Email":     emailAddr,
-		"Error":     errMsg,
-	}); err != nil {
+	data := web.IndexTemplateData{
+		Title:     "Enter Invite Code",
+		SessionID: sessionID,
+		Email:     emailAddr,
+		Error:     errMsg,
+	}
+	if err := web.ExecuteIndexTemplate(c.Writer, data); err != nil {
 		p.logger.Error("Failed to render code form", zap.Error(err))
 	}
 }
