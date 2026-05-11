@@ -2,7 +2,7 @@
     "name": "@sirosfoundation/go-invite-op",
     "private": true,
     "scripts": {
-        "build": "mkdir ./web/dist -p && pnpm build:css && pnpm build:js",
+        "build": "mkdir -p ./web/dist && pnpm build:css && pnpm build:js",
         "build:css": "tailwindcss -i ./web/src/style.css -o ./web/dist/style.css",
         "build:js": "cp ./web/src/main.js ./web/dist/main.js"
     },

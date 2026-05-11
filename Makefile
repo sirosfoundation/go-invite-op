@@ -46,7 +46,7 @@ tidy: ## Tidy go.mod/go.sum
 
 tools: ## Install development tools
 	@echo "Installing tools..."
-	@go install github.com/golangci-lint-lint/golangci-lint@v2.10.0
+	@go install github.com/golangci/golangci-lint@v2.10.0
 	@go install golang.org/x/tools/cmd/goimports@latest
 	@go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 clean: ## Clean build artifacts
