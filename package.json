@@ -1,0 +1,15 @@
+{
+    "name": "@sirosfoundation/go-invite-op",
+    "private": true,
+    "scripts": {
+        "build": "mkdir ./web/dist -p && pnpm build:css && pnpm build:js",
+        "build:css": "tailwindcss -i ./web/src/style.css -o ./web/dist/style.css",
+        "build:js": "cp ./web/src/main.js ./web/dist/main.js"
+    },
+    "dependencies": {
+        "tailwind": "^4.0.0"
+    },
+    "devDependencies": {
+        "@tailwindcss/cli": "^4.3.0"
+    }
+}
