@@ -38,4 +38,5 @@ Thumbs.db
 # Frontend
 node_modules/
 web/dist/*
-web/!dist/.gitkeep
+!web/dist/.gitkeep
+!web/dist/fonts/
