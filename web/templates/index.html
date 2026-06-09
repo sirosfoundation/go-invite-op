@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/main.js"></script>
+</head>
+<body class="content-fade-in-appear-done content-fade-in-enter-done">
+    <div class="bg-lm-gray-100 dark:bg-dm-gray-900 min-h-dvh flex flex-col">
+        <div class="grow flex flex-col items-center justify-center px-6 py-8">
+            {{if .Email}}
+                <h1 class="text-3xl mb-8 font-bold leading-tight tracking-tight text-lm-gray-900 text-center dark:text-white">Enter your invite code</h1>
+            {{else}}
+                <h1 class="text-3xl mb-8 font-bold leading-tight tracking-tight text-lm-gray-900 text-center dark:text-white">Enter your email address</h1>
+            {{end}}
+            <div class="relative p-8 sm:px-12 space-y-4 md:space-y-6 lg:space-y-8 bg-white w-[min(100%,_450px)] rounded-lg dark:bg-dm-gray-900 border border-lm-gray-400 dark:border-dm-gray-600">
+                {{if .Email}}
+                    <p class="text-sm font-light text-lm-gray-900 dark:text-dm-gray-100">A code has been sent to {{.Email}}</p>
+                {{end}}
+                {{if .Error}}
+                    <p class="text-lm-red dark:text-dm-red">{{.Error}}</p>
+                {{end}}
+                <form method="POST">
+                    <input type="hidden" name="session_id" value="{{.SessionID}}">
+                    {{if .Email}}
+                        <div class="mb-4 relative">
+                            <label for="code" class="block text-lm-gray-800 dark:text-dm-gray-200 text-sm font-bold mb-2">Code</label>
+                            <input type="text" id="code" name="code" required class="w-full px-3 py-2 bg-lm-gray-200 dark:bg-dm-gray-800 border border-lm-gray-400 dark:border-dm-gray-600 dark:text-white rounded-lg dark:inputDarkModeOverride">
+                        </div>
+                    {{else}}
+                        <div class="mb-4 relative">
+                            <label for="email" class="block text-lm-gray-800 dark:text-dm-gray-200 text-sm font-bold mb-2">Email</label>
+                            <input type="email" id="email" name="email" required class="w-full px-3 py-2 bg-lm-gray-200 dark:bg-dm-gray-800 border border-lm-gray-400 dark:border-dm-gray-600 dark:text-white rounded-lg dark:inputDarkModeOverride">
+                        </div>
+                    {{end}}
+                    <div class="mt-2 relative w-full flex flex-col justify-center">
+                        <button type="submit" class="rounded-lg shadow-xs text-center font-medium flex flex-row flex-nowrap items-center justify-center gap-2 border transition-color duration-150 text-md hover:cursor-pointer hover:brightness-[0.85] dark:hover:brightness-[1.15] px-5 py-3 text-white bg-primary border-primary focus-visible:outline-2 focus-visible:outline-offset-2 items-center justify-center relative passkey-button-undefined">{{if .Email}}Verify{{else}}Continue{{end}}</button>
+                    </div>
+                </form>
+            </div>
+            <footer class="my-6">
+                <p class="text-sm text-lm-gray-800 dark:text-dm-gray-200 text-center">
+                    Powered by 
+                    <a href="https://developers.siros.org" rel="noreferrer" target="_blank" class="underline font-semibold text-lm-gray-800 dark:text-dm-gray-300">SIROS ID</a>
+                </p>
+            </footer>
+        </div>
+    </div>
+</body>
+</html>
