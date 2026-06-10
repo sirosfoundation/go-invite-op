@@ -13,7 +13,7 @@ COPY web/src/ web/src/
 RUN pnpm build
 
 # Go build stage
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 
 WORKDIR /app
 
