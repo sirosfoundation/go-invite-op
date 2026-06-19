@@ -3,7 +3,7 @@ FROM node:26-alpine AS node-builder
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@10.4.0 --activate
+RUN npm install -g corepack && corepack enable && corepack prepare pnpm@10.4.0 --activate
 
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
