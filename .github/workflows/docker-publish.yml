@@ -9,7 +9,7 @@ on:
 
 jobs:
   docker:
-    uses: sirosfoundation/.github/.github/workflows/docker-build-push.yml@main
+    uses: sirosfoundation/.github/.github/workflows/docker-build-push.yml@8b079d7f8fa866a3406d1f414e740cc51b8f35f1 # main
     permissions:
       contents: read
       packages: write
