@@ -3,6 +3,7 @@
 [![CI](https://github.com/sirosfoundation/go-invite-op/actions/workflows/ci.yml/badge.svg)](https://github.com/sirosfoundation/go-invite-op/actions/workflows/ci.yml)
 [![Security](https://github.com/sirosfoundation/go-invite-op/actions/workflows/security.yml/badge.svg)](https://github.com/sirosfoundation/go-invite-op/actions/workflows/security.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sirosfoundation/go-invite-op)](https://goreportcard.com/report/github.com/sirosfoundation/go-invite-op)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/sirosfoundation/go-invite-op/badge)](https://scorecard.dev/viewer/?uri=github.com/sirosfoundation/go-invite-op)
 [![License](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg)](LICENSE)
 
 Invite code service with OpenID Provider interface for SIROS ID.
