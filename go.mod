@@ -1,6 +1,6 @@
 module github.com/sirosfoundation/go-invite-op
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/gin-contrib/cors v1.7.7
@@ -64,6 +64,6 @@ require (
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
