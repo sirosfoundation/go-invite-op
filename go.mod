@@ -1,6 +1,6 @@
 module github.com/sirosfoundation/go-invite-op
 
-go 1.27
+go 1.26.6
 
 require (
 	github.com/gin-contrib/cors v1.7.7
